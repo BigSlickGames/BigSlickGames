@@ -1,6 +1,6 @@
 import React from "react";
-import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./components/Dashboard";
 import SplashScreen from "./components/SplashScreen";
 import AuthScreen from "./components/AuthScreen";
@@ -12,6 +12,9 @@ function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const isSyncing = useRef(false);
+  const syncIntervalRef = useRef(null);
 
   useEffect(() => {
     // Check for existing session
@@ -34,45 +37,25 @@ function App() {
             setProfile(profileData);
           } else {
             // Profile doesn't exist, create it
-            const { data: newProfile, error: createError } =
-              await supabase.auth.updateUser({
-                data: {
-                  username: session.user.email?.split("@")[0] || "Player",
-                  chips: 15000,
-                  games_played: 0,
-                  games_won: 0,
-                  level: 1,
-                  experience: 0,
-                  theme_preference: "orange",
-                  preferences: {
-                    sound: true,
-                    theme: "orange",
-                    notifications: true,
-                  },
-                },
-              });
-
-            if (!createError) {
-              const profileData = {
-                id: session.user.id,
-                email: session.user.email,
-                username: session.user.email?.split("@")[0] || "Player",
-                chips: 15000,
-                games_played: 0,
-                games_won: 0,
-                level: 1,
-                experience: 0,
-                theme_preference: "orange",
-                preferences: {
-                  sound: true,
-                  theme: "orange",
-                  notifications: true,
-                },
-                created_at: session.user.created_at,
-              };
-              setUser(session.user);
-              setProfile(profileData);
-            }
+            const profileData = {
+              id: session.user.id,
+              email: session.user.email,
+              username: session.user.email?.split("@")[0] || "Player",
+              chips: 15000,
+              games_played: 0,
+              games_won: 0,
+              level: 1,
+              experience: 0,
+              theme_preference: "orange",
+              preferences: {
+                sound: true,
+                theme: "orange",
+                notifications: true,
+              },
+              created_at: session.user.created_at,
+            };
+            setUser(session.user);
+            setProfile(profileData);
           }
         }
       } catch (error) {
@@ -91,22 +74,36 @@ function App() {
       if (event === "SIGNED_OUT") {
         setUser(null);
         setProfile(null);
+        if (syncIntervalRef.current) {
+          clearInterval(syncIntervalRef.current);
+          syncIntervalRef.current = null;
+        }
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
   }, []);
 
-  // Sync chips every 10 seconds
+  // Sync chips every 30 seconds - FIXED: Only depends on user.id
   useEffect(() => {
-    if (!user || !profile) return;
+    // Clear any existing interval
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+    }
+
+    if (!user?.id) return;
 
     const syncChips = async () => {
-      // Don't sync if Supabase is not available
-      if (!isSupabaseAvailable()) {
-        console.log("💰 Supabase not available, skipping chip sync");
-        return;
-      }
+      if (isSyncing.current) return;
+      if (!isSupabaseAvailable()) return;
+
+      isSyncing.current = true;
 
       try {
         const { data: updatedProfile, error } = await supabase
@@ -116,62 +113,41 @@ function App() {
           .single();
 
         if (updatedProfile && !error) {
-          setProfile((prev) => ({
-            ...prev,
-            chips: updatedProfile.chips || updatedProfile.chips_balance || 0,
-          }));
-          console.log(
-            "💰 Chips synced:",
-            updatedProfile.chips || updatedProfile.chips_balance
-          );
-        } else {
-          console.warn(
-            "⚠️ Chip sync failed, but keeping user logged in:",
-            error
-          );
+          const newChips =
+            updatedProfile.chips || updatedProfile.chips_balance || 0;
+
+          setProfile((prev) => {
+            if (!prev || prev.chips === newChips) return prev;
+            return { ...prev, chips: newChips };
+          });
         }
       } catch (error) {
-        console.warn("⚠️ Chip sync error, but keeping user logged in:", error);
+        // Silent error handling
+      } finally {
+        isSyncing.current = false;
       }
     };
 
     // Only set up sync if Supabase is available
     if (isSupabaseAvailable()) {
-      // Initial sync
-      syncChips();
+      // Initial sync after 2 seconds
+      setTimeout(syncChips, 2000);
 
-      // Set up interval for every 10 seconds
-      const interval = setInterval(syncChips, 10000);
-      return () => clearInterval(interval);
+      // Set up interval for every 30 seconds
+      syncIntervalRef.current = setInterval(syncChips, 30000);
     }
-  }, [user, profile?.id]);
+
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+    };
+  }, [user?.id]); // ✅ FIXED: Only depends on user.id, NOT profile
 
   const handleAuthSuccess = (userData: any, profileData: any) => {
     setUser(userData);
     setProfile(profileData);
-  };
-
-  // Sync chips to database when profile changes
-  const syncChipsToDatabase = async (newChips: number) => {
-    if (!user) return;
-
-    if (!isSupabaseAvailable()) {
-      console.log("💰 Supabase not available, skipping chip sync to database");
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ chips: newChips })
-        .eq("id", user.id);
-
-      if (error) {
-        console.error("Error syncing chips:", error);
-      }
-    } catch (error) {
-      console.error("Error syncing chips:", error);
-    }
   };
 
   if (loading) {
@@ -190,10 +166,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Reset Password Route */}
         <Route path="/reset-password" element={<ResetPassword />} />
-
-        {/* Main App Routes */}
         <Route
           path="/*"
           element={

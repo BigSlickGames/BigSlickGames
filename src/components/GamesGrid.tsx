@@ -10,6 +10,13 @@ import {
   Play,
 } from "lucide-react";
 
+import stackEmBanner from "./images/21STACK'EM.png";
+import racingSuitsBanner from "./images/RACINGSUITS.png";
+import holdEmBanner from "./images/21HOLD'EM.png";
+import multiUpBanner from "./images/21MULTI'UP.png";
+import sinkEmBanner from "./images/21SINK'EM.png";
+import pokerOpolyBanner from "./images/POKER-OPOLY.png";
+
 interface UserProfile {
   id: string;
   email: string;
@@ -31,8 +38,7 @@ const games = [
     description: "Build your way to victory",
     icon: Club,
     accent: "dark-green",
-    bannerImage:
-      "/Users/abhinavsingh/Downloads/BigSlickgames/public/images/21StackemFinal.png",
+    bannerImage: stackEmBanner,
     liveStats: { playersOnline: 156 },
     glassTheme: {
       background: "from-green-700/10 via-green-800/5 to-green-900/10",
@@ -52,7 +58,7 @@ const games = [
     minBet: 100,
     icon: Rocket,
     accent: "cyan",
-    bannerImage: "/images/banner new logo.png",
+    bannerImage: racingSuitsBanner,
     specialFeatures: true,
     glassTheme: {
       background: "from-cyan-500/10 via-blue-500/5 to-cyan-600/10",
@@ -72,7 +78,7 @@ const games = [
     minBet: 1000,
     icon: Spades,
     accent: "orange",
-    bannerImage: "/images/21 Holdem Final.png",
+    bannerImage: holdEmBanner,
     glassTheme: {
       background: "from-yellow-500/10 via-orange-500/5 to-red-600/10",
       border: "border-yellow-400/30",
@@ -91,7 +97,7 @@ const games = [
     minBet: 5000,
     icon: Heart,
     accent: "red",
-    bannerImage: "/images/21 Multiup Final.png",
+    bannerImage: multiUpBanner,
     glassTheme: {
       background: "from-pink-500/10 via-purple-500/5 to-pink-600/10",
       border: "border-pink-400/30",
@@ -110,7 +116,7 @@ const games = [
     minBet: "Full Bankroll",
     icon: Diamond,
     accent: "yellow",
-    bannerImage: "/images/Deck Realms Factions At War.png",
+    bannerImage: sinkEmBanner,
     specialFeatures: true,
     glassTheme: {
       background: "from-amber-500/10 via-yellow-500/5 to-red-600/10",
@@ -130,7 +136,7 @@ const games = [
     minBet: 2500,
     icon: Spades,
     accent: "green",
-    bannerImage: "/images/poker-oply.png",
+    bannerImage: pokerOpolyBanner,
     glassTheme: {
       background: "from-emerald-500/10 via-green-500/5 to-emerald-600/10",
       border: "border-emerald-400/30",
