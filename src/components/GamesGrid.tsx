@@ -201,7 +201,7 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
     .filter(Boolean);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-40 md:pb-32">
       {orderedGames.map((game, index) => {
         const IconComponent = game.icon;
         const isAnimated = animatedGames.has(game.id);
@@ -323,6 +323,7 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
           </div>
         );
       })}
+      <div className="h-32 md:h-8"></div>
     </div>
   );
 }

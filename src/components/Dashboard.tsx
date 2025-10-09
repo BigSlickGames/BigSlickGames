@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, MessageCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import Header from "./Header";
+import Footer from "./Footer";
+
 import GamesGrid from "./GamesGrid";
 import ProfileCard from "./ProfileCard";
 import FriendsPanel from "./FriendsPanel";
@@ -15,7 +17,7 @@ import ShopSidebar from "./ShopSidebar";
 import ProfileSettings from "./ProfileSettings";
 import Forum from "./Forum";
 import PrivacyPolicy from "./PrivacyPolicy";
-import TermsOfUse from "./TermsOfUse";
+import TermsOfUse from "./TermsOfService";
 import CommunityRules from "./CommunityRules";
 import Leaderboard from "./Leaderboard";
 
@@ -287,12 +289,36 @@ export default function Dashboard({
           onSettingsClick={() => setActiveView("settings")}
           onForumClick={() => setActiveView("forum")}
           onLeaderboardClick={() => setActiveView("leaderboard")}
+          onHomeClick={() => setActiveView("dashboard")} // ✅ Add this line
         />
       </div>
 
-      <main className="relative z-10 container mx-auto px-4 py-8">
-        {/* Animated Legal Links */}
+      {/* Mobile Banner - Only visible on mobile, after header */}
+      {activeView === "dashboard" && (
         <div
+          className={`block lg:hidden transform transition-all duration-300 ease-out ${
+            showElements.banner
+              ? "translate-y-0 opacity-100 scale-100"
+              : "translate-y-8 opacity-0 scale-95"
+          } ${showElements.bannerShake ? "animate-bounce" : ""}`}
+        >
+          <div className="relative rounded-xl overflow-hidden shadow-2xl border-2 border-orange-500/40">
+            <img
+              src="/images/banner_image.png"
+              alt="BigSlick Games Banner"
+              className="w-full h-auto object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
+          </div>
+        </div>
+      )}
+
+      <main className="relative z-10 container mx-auto px-4 py-8 mb-24">
+        {/* Animated Legal Links */}
+        {/* <div
           className={`mb-6 text-center transform transition-all duration-200 ease-out ${
             showElements.legalLinks
               ? "translate-y-0 opacity-100 scale-100"
@@ -321,31 +347,34 @@ export default function Dashboard({
               Community Rules
             </button>
           </div>
-        </div>
+        </div> */}
 
         {/* Animated Scrolling Advertisement Banner */}
-        <div
-          className={`transform transition-all duration-300 ease-out ${
-            showElements.ads
-              ? "translate-x-0 opacity-100"
-              : "-translate-x-20 opacity-0"
-          }`}
-        >
-          <CollapsibleSection
-            id="ads"
-            title="Game Promotions"
-            isCollapsed={collapsedSections.ads}
-            onToggle={() => toggleSection("ads")}
+        {/* Only show ads on dashboard view */}
+        {activeView === "dashboard" && (
+          <div
+            className={`transform transition-all duration-300 ease-out ${
+              showElements.ads
+                ? "translate-x-0 opacity-100"
+                : "-translate-x-20 opacity-0"
+            }`}
           >
-            <ScrollingAds onGameClick={handleGameClick} />
-          </CollapsibleSection>
-        </div>
+            <CollapsibleSection
+              id="ads"
+              title="Game Promotions"
+              isCollapsed={collapsedSections.ads}
+              onToggle={() => toggleSection("ads")}
+            >
+              <ScrollingAds onGameClick={handleGameClick} />
+            </CollapsibleSection>
+          </div>
+        )}
 
         {activeView === "dashboard" ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-8 min-h-screen">
             {/* Animated Left Sidebar */}
             <div
-              className={`lg:col-span-1 order-2 lg:order-1 space-y-6 transform transition-all duration-400 ease-out ${
+              className={`hidden lg:block lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.leftSidebar
                   ? "translate-x-0 opacity-100"
                   : "-translate-x-16 opacity-0"
@@ -377,17 +406,26 @@ export default function Dashboard({
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-gray-400 text-sm">Level</span>
                       <span className="text-white font-bold text-sm">
-                        Level {profile.level}
+                        Level {profile.level || 1}
                       </span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
                       <div
                         className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full transition-all duration-500 shadow-sm shadow-orange-500/50"
-                        style={{ width: "65%" }}
+                        style={{
+                          width: `${Math.min(
+                            ((profile.experience || 0) /
+                              (1000 * (profile.level || 1))) *
+                              100,
+                            100
+                          )}%`,
+                        }}
                       ></div>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
-                      650 / 1000 XP to next level
+                      {(profile.experience || 0).toLocaleString()} /{" "}
+                      {(1000 * (profile.level || 1)).toLocaleString()} XP to
+                      next level
                     </p>
                   </div>
 
@@ -515,7 +553,7 @@ export default function Dashboard({
 
             {/* Animated Games Grid */}
             <div
-              className={`lg:col-span-2 order-1 lg:order-2 transform transition-all duration-500 ease-out ${
+              className={`lg:col-span-2 transform transition-all duration-500 ease-out ${
                 showElements.gamesGrid
                   ? "translate-y-0 opacity-100 scale-100"
                   : "translate-y-12 opacity-0 scale-95"
@@ -533,7 +571,7 @@ export default function Dashboard({
 
             {/* Animated Right Sidebar */}
             <div
-              className={`lg:col-span-1 order-3 lg:order-3 space-y-6 transform transition-all duration-400 ease-out ${
+              className={`hidden lg:block lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.rightSidebar
                   ? "translate-x-0 opacity-100"
                   : "translate-x-16 opacity-0"
@@ -602,7 +640,7 @@ export default function Dashboard({
           </div>
         )}
       </main>
-
+      <Footer onSetActiveView={setActiveView} />
       <DailyBonusModal
         isOpen={showDailyBonus}
         onClaim={claimDailyBonus}
@@ -645,8 +683,10 @@ function CollapsibleSection({
       </button>
 
       <div
-        className={`transition-all duration-300 ease-in-out overflow-visible ${
-          isCollapsed ? "max-h-0 opacity-0" : "max-h-none opacity-100"
+        className={`transition-all duration-300 ease-in-out ${
+          isCollapsed
+            ? "max-h-0 opacity-0 overflow-hidden"
+            : "max-h-[2000px] opacity-100 overflow-visible"
         }`}
       >
         <div className="transform transition-transform duration-300 ease-in-out">

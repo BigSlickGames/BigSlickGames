@@ -845,7 +845,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         <div className="auth-background">
           <div className="auth-background-inner">
             <img
-              src="public/images/banner_image.png"
+              src="/images/banner_image.png"
               alt="Background Banner"
               className="auth-background-image"
             />

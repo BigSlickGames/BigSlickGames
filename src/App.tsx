@@ -18,6 +18,7 @@ function App() {
 
   useEffect(() => {
     // Check for existing session
+    // In App.tsx, replace the checkSession function:
     const checkSession = async () => {
       try {
         const {
@@ -25,25 +26,59 @@ function App() {
         } = await supabase.auth.getSession();
 
         if (session?.user) {
-          // Get user profile
+          // Fetch profile with wallet and preferences
           const { data: profileData, error: profileError } = await supabase
             .from("profiles")
-            .select("*")
+            .select(
+              `
+          *,
+          user_wallet(*),
+          user_preferences(*)
+        `
+            )
             .eq("id", session.user.id)
             .single();
 
-          if (profileData && !profileError) {
-            setUser(session.user);
-            setProfile(profileData);
-          } else {
-            // Profile doesn't exist, create it
-            const profileData = {
+          // If profile doesn't exist, create all three tables
+          if (profileError && profileError.code === "PGRST116") {
+            // Profile doesn't exist - create it
+            const newUsername = session.user.email?.split("@")[0] || "Player";
+
+            await supabase.from("profiles").insert([
+              {
+                id: session.user.id,
+                username: newUsername,
+                email: session.user.email,
+              },
+            ]);
+
+            await supabase.from("user_wallet").insert([
+              {
+                user_id: session.user.id,
+                chips: 15000,
+                level: 1,
+                experience: 0,
+              },
+            ]);
+
+            await supabase.from("user_preferences").insert([
+              {
+                user_id: session.user.id,
+                theme_preference: "orange",
+                preferences: {
+                  sound: true,
+                  theme: "orange",
+                  notifications: true,
+                },
+              },
+            ]);
+
+            // Set the profile with default values
+            const defaultProfile = {
               id: session.user.id,
               email: session.user.email,
-              username: session.user.email?.split("@")[0] || "Player",
+              username: newUsername,
               chips: 15000,
-              games_played: 0,
-              games_won: 0,
               level: 1,
               experience: 0,
               theme_preference: "orange",
@@ -52,10 +87,55 @@ function App() {
                 theme: "orange",
                 notifications: true,
               },
-              created_at: session.user.created_at,
+              created_at: new Date().toISOString(),
             };
+
             setUser(session.user);
-            setProfile(profileData);
+            setProfile(defaultProfile);
+          } else if (profileData && !profileError) {
+            // Check if wallet or preferences are missing and create them
+            if (!profileData.user_wallet) {
+              await supabase.from("user_wallet").insert([
+                {
+                  user_id: session.user.id,
+                  chips: 15000,
+                  level: 1,
+                  experience: 0,
+                },
+              ]);
+            }
+
+            if (!profileData.user_preferences) {
+              await supabase.from("user_preferences").insert([
+                {
+                  user_id: session.user.id,
+                  theme_preference: "orange",
+                  preferences: {
+                    sound: true,
+                    theme: "orange",
+                    notifications: true,
+                  },
+                },
+              ]);
+            }
+
+            // Flatten the profile data
+            const flatProfile = {
+              ...profileData,
+              chips: profileData.user_wallet?.chips || 15000,
+              level: profileData.user_wallet?.level || 1,
+              experience: profileData.user_wallet?.experience || 0,
+              theme_preference:
+                profileData.user_preferences?.theme_preference || "orange",
+              preferences: profileData.user_preferences?.preferences || {
+                sound: true,
+                theme: "orange",
+                notifications: true,
+              },
+            };
+
+            setUser(session.user);
+            setProfile(flatProfile); // ✅ Use flatProfile, not profileData!
           }
         }
       } catch (error) {
@@ -106,19 +186,31 @@ function App() {
       isSyncing.current = true;
 
       try {
-        const { data: updatedProfile, error } = await supabase
-          .from("profiles")
-          .select("chips, chips_balance")
-          .eq("id", user.id)
+        const { data: walletData, error } = await supabase
+          .from("user_wallet")
+          .select("chips, level, experience")
+          .eq("user_id", user.id)
           .single();
 
-        if (updatedProfile && !error) {
-          const newChips =
-            updatedProfile.chips || updatedProfile.chips_balance || 0;
-
+        if (walletData && !error) {
           setProfile((prev) => {
-            if (!prev || prev.chips === newChips) return prev;
-            return { ...prev, chips: newChips };
+            if (!prev) return prev;
+
+            // Only update if values changed
+            if (
+              prev.chips === walletData.chips &&
+              prev.level === walletData.level &&
+              prev.experience === walletData.experience
+            ) {
+              return prev;
+            }
+
+            return {
+              ...prev,
+              chips: walletData.chips,
+              level: walletData.level,
+              experience: walletData.experience,
+            };
           });
         }
       } catch (error) {
@@ -134,7 +226,7 @@ function App() {
       setTimeout(syncChips, 2000);
 
       // Set up interval for every 30 seconds
-      syncIntervalRef.current = setInterval(syncChips, 30000);
+      syncIntervalRef.current = setInterval(syncChips, 1000);
     }
 
     return () => {
