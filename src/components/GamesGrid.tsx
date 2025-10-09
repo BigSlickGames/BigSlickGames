@@ -201,7 +201,7 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
     .filter(Boolean);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-40 md:pb-32">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 pb-8">
       {orderedGames.map((game, index) => {
         const IconComponent = game.icon;
         const isAnimated = animatedGames.has(game.id);
@@ -292,7 +292,7 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
             </div>
 
             {/* Game Content */}
-            <div className="p-6 space-y-4">
+            <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
               {/* Banner Image */}
               <div className="relative h-32 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border border-orange-500/40 rounded-lg overflow-hidden">
                 <div
@@ -323,7 +323,6 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
           </div>
         );
       })}
-      <div className="h-32 md:h-8"></div>
     </div>
   );
 }

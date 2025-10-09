@@ -256,25 +256,25 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/*"
-          element={
-            showSplash ? (
-              <SplashScreen onComplete={() => setShowSplash(false)} />
-            ) : !user || !profile ? (
-              <AuthScreen onAuthSuccess={handleAuthSuccess} />
-            ) : (
-              <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+    <div className="min-h-screen h-full w-full bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/*"
+            element={
+              showSplash ? (
+                <SplashScreen onComplete={() => setShowSplash(false)} />
+              ) : !user || !profile ? (
+                <AuthScreen onAuthSuccess={handleAuthSuccess} />
+              ) : (
                 <Dashboard user={user} profile={profile} />
-              </div>
-            )
-          }
-        />
-      </Routes>
-    </BrowserRouter>
+              )
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </div>
   );
 }
 

@@ -66,22 +66,31 @@ export default function ProfileSettings({
 
     try {
       // Validate username
-      if (username.trim().length < 3) {
-        showMessage("Username must be at least 3 characters long", "error");
-        setLoading(false);
-        return;
-      }
 
       // Update profiles table (username)
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
-          username: username.trim(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", profile.id);
 
       if (profileError) throw profileError;
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select(
+          `
+    id,
+    username,
+    email,
+    created_at,
+    country,
+    user_preferences!inner(preferences)
+  `
+        )
+        .eq("id", userId)
+        .single();
 
       // Update user_preferences table (notifications, sound)
       const { error: prefsError } = await supabase
@@ -101,7 +110,6 @@ export default function ProfileSettings({
       // Update local profile state
       const updatedProfile = {
         ...profile,
-        username: username.trim(),
         country: country || null,
         preferences: {
           sound: soundEnabled,
@@ -114,7 +122,7 @@ export default function ProfileSettings({
       showMessage("Settings saved successfully", "success");
     } catch (error: any) {
       console.error("Error updating profile:", error);
-      showMessage("Failed to save settings. Please try again.", "error");
+      // showMessage("Failed to save settings. Please try again.", "error");
     } finally {
       setLoading(false);
     }
@@ -287,13 +295,11 @@ export default function ProfileSettings({
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full bg-gray-800/50 border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all"
-                    placeholder="Enter your username"
-                    minLength={3}
+                    disabled
+                    className="w-full bg-gray-800/30 border border-gray-700/30 rounded-xl px-4 py-3.5 text-gray-500 cursor-not-allowed"
                   />
                   <p className="text-xs text-gray-500 mt-1.5">
-                    Minimum 3 characters required
+                    Username cannot be changed once set
                   </p>
                 </div>
 

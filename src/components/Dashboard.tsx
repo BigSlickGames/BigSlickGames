@@ -220,7 +220,7 @@ export default function Dashboard({
   }
 
   return (
-    <div className="min-h-screen relative bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+    <div className="min-h-screen min-w-full relative bg-gradient-to-br from-gray-900 via-gray-800 to-black flex flex-col">
       {/* Pinstripe and gradient background overlay */}
       <div className="absolute inset-0 opacity-30">
         {/* Diagonal pinstripes */}
@@ -316,7 +316,7 @@ export default function Dashboard({
         </div>
       )}
 
-      <main className="relative z-10 container mx-auto px-4 py-8 mb-24">
+      <main className="relative z-10 container mx-auto px-4 py-8 pb-32 flex-1">
         {/* Animated Legal Links */}
         {/* <div
           className={`mb-6 text-center transform transition-all duration-200 ease-out ${
@@ -571,7 +571,7 @@ export default function Dashboard({
 
             {/* Animated Right Sidebar */}
             <div
-              className={`hidden lg:block lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
+              className={`lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.rightSidebar
                   ? "translate-x-0 opacity-100"
                   : "translate-x-16 opacity-0"
