@@ -5,8 +5,13 @@ import spaceCrashImg from "./images/SPACECRASH.png";
 
 export default function MiniGames() {
   const handleGameClick = (gameId: string) => {
+    if (gameId === "racing-suits") {
+      // Navigate to internal game route
+      window.location.href = "/play/racing-suits";
+      return;
+    }
     const gameUrls = {
-      "racing-suits": "https://clean-blank-project-07sc.bolt.host/",
+      // "racing-suits": "https://clean-blank-project-07sc.bolt.host/",
       "space-crash": "https://connect-to-supabase-h2bf.bolt.host/",
     };
 

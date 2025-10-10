@@ -167,6 +167,12 @@ export default function Dashboard({
   };
 
   const handleGameClick = (gameId: string) => {
+    if (gameId === "racing-suits") {
+      // Navigate to internal game route
+      window.location.href = "/play/racing-suits";
+      return;
+    }
+
     const gameUrls = {
       "stack-em": "https://create-iphone-templa-hb73.bolt.host/",
       "sink-em": "https://deck-realms-card-builder.netlify.app/",

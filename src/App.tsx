@@ -6,6 +6,7 @@ import SplashScreen from "./components/SplashScreen";
 import AuthScreen from "./components/AuthScreen";
 import ResetPassword from "./components/ResetPassword";
 import { supabase, isSupabaseAvailable } from "./lib/supabase";
+import GameContainer from "./components/GameContainer";
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -254,18 +255,28 @@ function App() {
       </div>
     );
   }
-
   return (
     <div className="min-h-screen h-full w-full bg-gradient-to-br from-gray-900 via-gray-800 to-black">
       <BrowserRouter>
         <Routes>
           <Route path="/reset-password" element={<ResetPassword />} />
+
+          {/* Add game route - accessible even when logged in */}
+          <Route
+            path="/play/:gameId"
+            element={
+              user && profile ? (
+                <GameContainer />
+              ) : (
+                <AuthScreen onAuthSuccess={handleAuthSuccess} />
+              )
+            }
+          />
+
           <Route
             path="/*"
             element={
-              showSplash ? (
-                <SplashScreen onComplete={() => setShowSplash(false)} />
-              ) : !user || !profile ? (
+              !user || !profile ? (
                 <AuthScreen onAuthSuccess={handleAuthSuccess} />
               ) : (
                 <Dashboard user={user} profile={profile} />
