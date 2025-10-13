@@ -173,6 +173,11 @@ export default function Dashboard({
       return;
     }
 
+    if (gameId === "space-crash") {
+      // Navigate to internal game route
+      window.location.href = "/play/space-crash";
+      return;
+    }
     const gameUrls = {
       "stack-em": "https://create-iphone-templa-hb73.bolt.host/",
       "sink-em": "https://deck-realms-card-builder.netlify.app/",
@@ -180,7 +185,6 @@ export default function Dashboard({
       "multi-up": "https://21-multiup.netlify.app/",
       pokeroply: "https://pokeroply.netlify.app/",
       "racing-suits": "https://clean-blank-project-07sc.bolt.host/",
-      "space-crash": "https://connect-to-supabase-h2bf.bolt.host/",
     };
 
     const gameUrl = gameUrls[gameId as keyof typeof gameUrls];

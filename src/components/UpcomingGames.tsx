@@ -10,9 +10,15 @@ export default function MiniGames() {
       window.location.href = "/play/racing-suits";
       return;
     }
+
+    if (gameId === "space-crash") {
+      // Navigate to internal game route
+      window.location.href = "/play/space-crash";
+      return;
+    }
     const gameUrls = {
       // "racing-suits": "https://clean-blank-project-07sc.bolt.host/",
-      "space-crash": "https://connect-to-supabase-h2bf.bolt.host/",
+      // "space-crash": "https://connect-to-supabase-h2bf.bolt.host/",
     };
 
     const gameUrl = gameUrls[gameId as keyof typeof gameUrls];

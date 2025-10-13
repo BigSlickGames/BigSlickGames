@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #000000;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+  
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  .animate-bounce-slow {
+    animation: bounce 1s infinite;
+  }
+  
+  .glass-card {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(0, 20, 40, 0.8);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(59, 130, 246, 0.2);
+  }
+  
+  .glass-button {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .glass-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px rgba(59, 130, 246, 0.3);
+  }
+  
+  .orange-gradient {
+    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 50%, #ffb347 100%);
+  }
+  
+  .orange-glow {
+    box-shadow: 0 0 20px rgba(255, 165, 0, 0.5);
+  }
+  
+  .dark-card {
+    background: rgba(0, 15, 30, 0.9);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+  
+  /* Custom slider styling */
+  .slider {
+    background: #1a1a1a;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  
+  .slider::-webkit-slider-thumb {
+    appearance: none;
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    background: #ff6b35;
+    cursor: pointer;
+    border: 2px solid #ff6b35;
+    box-shadow: 0 2px 6px rgba(255, 107, 53, 0.5);
+  }
+  
+  .slider::-moz-range-thumb {
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    background: #ff6b35;
+    cursor: pointer;
+    border: 2px solid #ff6b35;
+    box-shadow: 0 2px 6px rgba(255, 107, 53, 0.5);
+  }
+  
+  /* Custom scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
+  
+  .scrollbar-thumb-white\/20::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+  }
+  
+  .scrollbar-track-transparent::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  /* Touch-friendly scrolling */
+  .overscroll-contain {
+    overscroll-behavior: contain;
+  }
+  
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+}
