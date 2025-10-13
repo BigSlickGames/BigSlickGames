@@ -266,6 +266,7 @@ function App() {
     ]);
 
     // Auto cash-out check (prioritized)
+    // Auto cash-out check (prioritized)
     if (
       autoCashOutEnabled &&
       newMultiplier >= autoCashOut - 0.01 &&
@@ -273,7 +274,7 @@ function App() {
       isGameRunning
     ) {
       console.log("Triggering auto cash-out", { newMultiplier, autoCashOut });
-      handleCashOut();
+      handleCashOut(newMultiplier); // Pass the current multiplier!
       return; // Exit animation loop immediately
     }
 
@@ -309,9 +310,11 @@ function App() {
     };
   }, [isGameRunning]);
 
-  const handleCashOut = () => {
+  const handleCashOut = (multiplierToUse?: number) => {
+    const finalMultiplier = multiplierToUse ?? currentMultiplier;
+
     console.log("handleCashOut called", {
-      currentMultiplier,
+      finalMultiplier,
       hasCashedOut,
       isGameRunning,
     });
@@ -325,16 +328,18 @@ function App() {
 
     setHasCashedOut(true);
     setIsGameRunning(false); // Stop game immediately
-    const winAmount = Math.floor(betAmount * currentMultiplier);
+
+    const winAmount = Math.floor(betAmount * finalMultiplier);
     const newBalance = chipBalance + winAmount;
     setChipBalance(newBalance);
     updateChipsInDB(newBalance);
     setWinnings(winAmount);
     setGameResult("win");
+    setCurrentMultiplier(finalMultiplier); // Update the displayed multiplier
     setLiveBets((prev) =>
       prev.map((bet) =>
         bet.id === liveBets[liveBets.length - 1].id
-          ? { ...bet, multiplier: currentMultiplier }
+          ? { ...bet, multiplier: finalMultiplier }
           : bet
       )
     );
@@ -347,10 +352,11 @@ function App() {
     console.log("Cash out completed", {
       winAmount,
       newBalance,
+      finalMultiplier,
+      betAmount,
       gameResult: "win",
     });
   };
-
   const resetGame = async () => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     setIsGameRunning(false);
