@@ -36,6 +36,7 @@ function App() {
   const [showMissions, setShowMissions] = useState(false);
   const [betAmount, setBetAmount] = useState(5);
   const [autoCashOut, setAutoCashOut] = useState(1.0);
+  const [autoCashOutEnabled, setAutoCashOutEnabled] = useState(false);
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [currentMultiplier, setCurrentMultiplier] = useState(1.0);
   const [hasCashedOut, setHasCashedOut] = useState(false);
@@ -218,7 +219,7 @@ function App() {
     crashPointRef.current = newCrashPoint;
     setCurrentMultiplier(1.0);
     startTimeRef.current = Date.now();
-    setIsGameRunning(true); // Set to true last to ensure state updates
+    setIsGameRunning(true);
     console.log("Game started", {
       crashPoint: newCrashPoint,
       isGameRunning: true,
@@ -265,7 +266,12 @@ function App() {
     ]);
 
     // Auto cash-out check (prioritized)
-    if (newMultiplier >= autoCashOut - 0.01 && !hasCashedOut && isGameRunning) {
+    if (
+      autoCashOutEnabled &&
+      newMultiplier >= autoCashOut - 0.01 &&
+      !hasCashedOut &&
+      isGameRunning
+    ) {
       console.log("Triggering auto cash-out", { newMultiplier, autoCashOut });
       handleCashOut();
       return; // Exit animation loop immediately
@@ -642,8 +648,30 @@ function App() {
                         ((autoCashOut - 1) / 9) * 100
                       }%, #1a1a1a 100%)`,
                     }}
-                    disabled={isGameRunning}
+                    disabled={isGameRunning || !autoCashOutEnabled}
                   />
+                </div>
+                <div className="mb-3 flex items-center justify-between glass-card p-3 rounded-lg bg-black/40 border border-orange-500/20">
+                  <span className="text-white/70 text-sm">
+                    Enable Auto Cash Out
+                  </span>
+                  <button
+                    onClick={() => setAutoCashOutEnabled(!autoCashOutEnabled)}
+                    disabled={isGameRunning}
+                    className={`relative inline-flex h-1 w-11 items-center rounded-sm transition-colors ${
+                      autoCashOutEnabled ? "bg-orange-500" : "bg-gray-600"
+                    } ${
+                      isGameRunning
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-7 w-4 transform rounded-sm bg-white transition-transform ${
+                        autoCashOutEnabled ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
                 </div>
                 {!isGameRunning && (
                   <button
