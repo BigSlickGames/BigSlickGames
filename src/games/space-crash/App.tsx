@@ -27,6 +27,10 @@ const generateCrashPoint = () => {
 
 function App() {
   const [userId, setUserId] = useState<string | null>(null);
+  const [cashOutMultiplier, setCashOutMultiplier] = useState<number | null>(
+    null
+  );
+
   const [playerName, setPlayerName] = useState("Player");
   const [loading, setLoading] = useState(true);
   const [chipBalance, setChipBalance] = useState(0);
@@ -311,13 +315,18 @@ function App() {
   }, [isGameRunning]);
 
   const handleCashOut = (multiplierToUse?: number) => {
-    const finalMultiplier = multiplierToUse ?? currentMultiplier;
+    // Ensure we always have a valid number
+    const finalMultiplier =
+      typeof multiplierToUse === "number" ? multiplierToUse : currentMultiplier;
 
     console.log("handleCashOut called", {
       finalMultiplier,
+      multiplierToUse,
+      currentMultiplier,
       hasCashedOut,
       isGameRunning,
     });
+
     if (!isGameRunning || hasCashedOut) {
       console.log("Cash out blocked: Game not running or already cashed out", {
         isGameRunning,
@@ -326,8 +335,15 @@ function App() {
       return;
     }
 
+    // Validate finalMultiplier is a valid number
+    if (typeof finalMultiplier !== "number" || isNaN(finalMultiplier)) {
+      console.error("Invalid multiplier:", finalMultiplier);
+      return;
+    }
+
     setHasCashedOut(true);
     setIsGameRunning(false); // Stop game immediately
+    setCashOutMultiplier(finalMultiplier); // Store the multiplier we cashed out at
 
     const winAmount = Math.floor(betAmount * finalMultiplier);
     const newBalance = chipBalance + winAmount;
@@ -335,7 +351,6 @@ function App() {
     updateChipsInDB(newBalance);
     setWinnings(winAmount);
     setGameResult("win");
-    setCurrentMultiplier(finalMultiplier); // Update the displayed multiplier
     setLiveBets((prev) =>
       prev.map((bet) =>
         bet.id === liveBets[liveBets.length - 1].id
@@ -357,11 +372,14 @@ function App() {
       gameResult: "win",
     });
   };
+
   const resetGame = async () => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     setIsGameRunning(false);
     setHasCashedOut(false);
     setCrashPoint(null);
+    setCashOutMultiplier(null); // Add this line
+
     crashPointRef.current = null;
     setGameResult(null);
     setCurrentMultiplier(1.0);
@@ -966,7 +984,7 @@ function App() {
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-green-400">Cashed at:</span>
                       <span className="text-green-400 font-bold">
-                        {currentMultiplier.toFixed(2)}x
+                        {cashOutMultiplier?.toFixed(2)}x
                       </span>
                     </div>
                   )}
