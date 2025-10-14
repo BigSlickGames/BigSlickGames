@@ -39,7 +39,7 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [betAmount, setBetAmount] = useState(5);
-  const [autoCashOut, setAutoCashOut] = useState(1.0);
+  const [autoCashOut, setAutoCashOut] = useState<number>(1.0);
   const [autoCashOutEnabled, setAutoCashOutEnabled] = useState(false);
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [currentMultiplier, setCurrentMultiplier] = useState(1.0);
@@ -56,6 +56,12 @@ function App() {
   const [rocketTrail, setRocketTrail] = useState<{ x: number; y: number }[]>(
     []
   );
+
+  // Helper function to safely convert to fixed decimal
+  const safeToFixed = (value: any, decimals: number = 2): string => {
+    const num = typeof value === "number" ? value : parseFloat(value);
+    return !isNaN(num) ? num.toFixed(decimals) : "0.00";
+  };
 
   useEffect(() => {
     loadUserData();
@@ -230,7 +236,7 @@ function App() {
     });
   };
 
-  const animate = () => {
+  const animate = useCallback(() => {
     if (!startTimeRef.current || !crashPointRef.current || !isGameRunning) {
       console.log("Animation stopped: Invalid state", {
         startTime: startTimeRef.current,
@@ -247,8 +253,8 @@ function App() {
     );
 
     console.log({
-      newMultiplier: newMultiplier.toFixed(2),
-      autoCashOut: autoCashOut.toFixed(2),
+      newMultiplier: safeToFixed(newMultiplier, 2),
+      autoCashOut: safeToFixed(autoCashOut, 2),
       hasCashedOut,
       isGameRunning,
       condition:
@@ -270,16 +276,16 @@ function App() {
     ]);
 
     // Auto cash-out check (prioritized)
-    // Auto cash-out check (prioritized)
+    const safeAutoCashOut = typeof autoCashOut === "number" ? autoCashOut : 1.0;
     if (
       autoCashOutEnabled &&
-      newMultiplier >= autoCashOut - 0.01 &&
+      newMultiplier >= safeAutoCashOut - 0.01 &&
       !hasCashedOut &&
       isGameRunning
     ) {
       console.log("Triggering auto cash-out", { newMultiplier, autoCashOut });
-      handleCashOut(newMultiplier); // Pass the current multiplier!
-      return; // Exit animation loop immediately
+      handleCashOut(newMultiplier);
+      return;
     }
 
     // Crash check (only if not cashed out)
@@ -297,7 +303,7 @@ function App() {
     } else if (!hasCashedOut) {
       animationRef.current = requestAnimationFrame(animate);
     }
-  };
+  }, [isGameRunning, hasCashedOut, autoCashOut, autoCashOutEnabled]);
 
   // Start animation when isGameRunning becomes true
   useEffect(() => {
@@ -312,7 +318,7 @@ function App() {
         animationRef.current = null;
       }
     };
-  }, [isGameRunning]);
+  }, [isGameRunning, animate]);
 
   const handleCashOut = (multiplierToUse?: number) => {
     // Ensure we always have a valid number
@@ -342,8 +348,8 @@ function App() {
     }
 
     setHasCashedOut(true);
-    setIsGameRunning(false); // Stop game immediately
-    setCashOutMultiplier(finalMultiplier); // Store the multiplier we cashed out at
+    setIsGameRunning(false);
+    setCashOutMultiplier(finalMultiplier);
 
     const winAmount = Math.floor(betAmount * finalMultiplier);
     const newBalance = chipBalance + winAmount;
@@ -378,7 +384,7 @@ function App() {
     setIsGameRunning(false);
     setHasCashedOut(false);
     setCrashPoint(null);
-    setCashOutMultiplier(null); // Add this line
+    setCashOutMultiplier(null);
 
     crashPointRef.current = null;
     setGameResult(null);
@@ -650,7 +656,7 @@ function App() {
                   <label className="block text-white/70 text-sm mb-2">
                     Auto Cash Out:{" "}
                     <span className="text-white font-bold">
-                      {autoCashOut.toFixed(2)}x
+                      {safeToFixed(autoCashOut, 2)}x
                     </span>
                   </label>
                   <input
@@ -661,8 +667,10 @@ function App() {
                     value={autoCashOut}
                     onChange={(e) => {
                       const newValue = parseFloat(e.target.value);
-                      console.log("Auto Cash Out set to:", newValue);
-                      setAutoCashOut(newValue);
+                      if (!isNaN(newValue)) {
+                        console.log("Auto Cash Out set to:", newValue);
+                        setAutoCashOut(newValue);
+                      }
                     }}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
                     style={{
@@ -709,10 +717,10 @@ function App() {
                 )}
                 {isGameRunning && !hasCashedOut && (
                   <button
-                    onClick={handleCashOut}
+                    onClick={() => handleCashOut()}
                     className="w-full glass-button bg-green-600 hover:bg-green-700 border border-green-400/40 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-green-500/30"
                   >
-                    Cash Out @ {currentMultiplier.toFixed(2)}x
+                    Cash Out @ {safeToFixed(currentMultiplier, 2)}x
                   </button>
                 )}
               </div>
@@ -730,7 +738,7 @@ function App() {
                       transition: "transform 0.3s ease",
                     }}
                   >
-                    {currentMultiplier.toFixed(2)}x
+                    {safeToFixed(currentMultiplier, 2)}x
                   </span>
                 </div>
 
@@ -905,7 +913,7 @@ function App() {
                             }`}
                           >
                             {bet.multiplier > 0
-                              ? `Cashed @ ${bet.multiplier.toFixed(2)}x`
+                              ? `Cashed @ ${safeToFixed(bet.multiplier, 2)}x`
                               : "Crashed"}
                           </span>
                         </div>
@@ -933,11 +941,11 @@ function App() {
                         h >= 2
                           ? "bg-green-500/20 text-green-400 border border-green-500/30"
                           : h >= 1.5
-                          ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                          : "bg-red-500/20 text-red-400 border border-red-500/30"
+                            ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                            : "bg-red-500/20 text-red-400 border border-red-500/30"
                       }`}
                     >
-                      {h.toFixed(2)}x
+                      {safeToFixed(h, 2)}x
                     </div>
                   ))
                 )}
@@ -977,14 +985,14 @@ function App() {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-white/70">Crash Point:</span>
                     <span className="text-white font-bold">
-                      {crashPoint?.toFixed(2)}x
+                      {safeToFixed(crashPoint, 2)}x
                     </span>
                   </div>
                   {gameResult === "win" && (
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-green-400">Cashed at:</span>
                       <span className="text-green-400 font-bold">
-                        {cashOutMultiplier?.toFixed(2)}x
+                        {safeToFixed(cashOutMultiplier, 2)}x
                       </span>
                     </div>
                   )}
