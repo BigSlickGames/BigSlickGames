@@ -4,5 +4,14 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "STRIPE_SECRET_KEY": "@stripe-secret-key"
+  }
 }

@@ -7,10 +7,10 @@ import {
   Crown,
   Gem,
   ArrowLeft,
-  Plus,
-  Minus,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import StripeWrapper from "./StripeWrapper";
+import CheckoutForm from "./CheckoutForm";
 
 interface UserProfile {
   id: string;
@@ -43,7 +43,6 @@ interface ShopProps {
 }
 
 const chipPackages: ShopItem[] = [
-  // ... (unchanged chipPackages array)
   {
     id: "550e8400-e29b-41d4-a716-446655440001",
     name: "Starter Pack",
@@ -129,7 +128,8 @@ const getPackageColor = (name: string) => {
 export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
   const [loading, setLoading] = useState(false);
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
-  const [testAmount, setTestAmount] = useState(1000);
+  const [clientSecret, setClientSecret] = useState<string>("");
+  const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
 
   const updateChipsInDatabase = async (newChipAmount: number) => {
     try {
@@ -150,68 +150,77 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
     }
   };
 
-  const handlePurchase = async (item: ShopItem) => {
+  const handlePurchaseClick = async (item: ShopItem) => {
     setLoading(true);
     try {
-      const newChipAmount = profile.chips + item.chip_amount;
-      const success = await updateChipsInDatabase(newChipAmount);
+      // Call your Vercel serverless function
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: item.price_real_money,
+          itemId: item.id,
+          userId: profile.id,
+        }),
+      });
 
-      if (success) {
-        onPurchase(newChipAmount);
-        setPurchaseSuccess(
-          `Successfully added ${item.chip_amount.toLocaleString()} chips from ${
-            item.name
-          }!`
-        );
-        setTimeout(() => setPurchaseSuccess(null), 3000);
-      } else {
-        throw new Error("Failed to update chips");
+      if (!response.ok) {
+        throw new Error("Failed to create payment intent");
       }
+
+      const data = await response.json();
+      setClientSecret(data.clientSecret);
+      setSelectedItem(item);
     } catch (error) {
-      console.error("Purchase failed:", error);
-      setPurchaseSuccess("Purchase failed. Please try again.");
+      console.error("Failed to initiate purchase:", error);
+      setPurchaseSuccess("Failed to start payment. Please try again.");
       setTimeout(() => setPurchaseSuccess(null), 3000);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTestAdd = async () => {
-    setLoading(true);
-    try {
-      const newChipAmount = profile.chips + testAmount;
-      const success = await updateChipsInDatabase(newChipAmount);
+  const handlePaymentSuccess = async () => {
+    if (!selectedItem) return;
 
-      if (success) {
-        onPurchase(newChipAmount);
-        setPurchaseSuccess(`Added ${testAmount.toLocaleString()} chips (Test)`);
-        setTimeout(() => setPurchaseSuccess(null), 2000);
-      }
-    } catch (error) {
-      console.error("Test add failed:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTestRemove = async () => {
-    setLoading(true);
     try {
-      const newChipAmount = Math.max(0, profile.chips - testAmount);
+      const newChipAmount = profile.chips + selectedItem.chip_amount;
       const success = await updateChipsInDatabase(newChipAmount);
 
       if (success) {
         onPurchase(newChipAmount);
         setPurchaseSuccess(
-          `Removed ${testAmount.toLocaleString()} chips (Test)`
+          `Successfully purchased ${selectedItem.chip_amount.toLocaleString()} chips!`
         );
-        setTimeout(() => setPurchaseSuccess(null), 2000);
+
+        // Close checkout modal first
+        setClientSecret("");
+        setSelectedItem(null);
+
+        // Scroll to success popup
+        setTimeout(() => {
+          const successPopup = document.getElementById("success-popup");
+          if (successPopup) {
+            successPopup.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+          }
+        }, 100);
+
+        // Keep success message for 4 seconds
+        setTimeout(() => setPurchaseSuccess(null), 4000);
       }
     } catch (error) {
-      console.error("Test remove failed:", error);
-    } finally {
-      setLoading(false);
+      console.error("Failed to update chips after payment:", error);
     }
+  };
+
+  const handleCancelPayment = () => {
+    setClientSecret("");
+    setSelectedItem(null);
   };
 
   return (
@@ -238,76 +247,80 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
         </p>
       </div>
 
-      {/* Test Controls */}
-      <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 shadow-lg">
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center space-x-2">
-            <span className="text-blue-400 text-sm font-medium">
-              Testing Mode
-            </span>
-          </div>
-          <p className="text-gray-300 text-sm">
-            Add or remove chips for testing purposes.
-          </p>
+      {/* Success Popup Modal */}
+      {purchaseSuccess && !purchaseSuccess.includes("Failed") && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            id="success-popup"
+            className="bg-gray-800 border border-gray-700 rounded-2xl p-6 sm:p-8 w-full max-w-sm sm:max-w-md shadow-2xl animate-in zoom-in duration-300"
+          >
+            <div className="text-center space-y-4">
+              {/* Animated Check Mark */}
+              <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-green-500 rounded-full flex items-center justify-center animate-in zoom-in duration-500">
+                <svg
+                  className="w-10 h-10 sm:w-12 sm:h-12 text-white animate-in zoom-in duration-700"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                    d="M5 13l4 4L19 7"
+                    className="animate-draw"
+                  />
+                </svg>
+              </div>
 
-          <div className="flex items-center justify-center space-x-4">
-            <label htmlFor="test-amount" className="text-gray-300 text-sm">
-              Test Amount:
-            </label>
-            <input
-              id="test-amount"
-              type="number"
-              value={testAmount}
-              onChange={(e) => setTestAmount(Number(e.target.value))}
-              className="bg-gray-700/50 border border-gray-600/50 rounded-md px-3 py-2 text-white w-24 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-              min="100"
-              step="100"
-              aria-label="Test chip amount"
-            />
-          </div>
+              {/* Success Text */}
+              <div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                  Payment Successful!
+                </h3>
+                <p className="text-sm sm:text-base text-gray-300">
+                  {purchaseSuccess}
+                </p>
+              </div>
 
-          <div className="flex items-center justify-center space-x-4">
-            <button
-              onClick={handleTestAdd}
-              disabled={loading}
-              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-              aria-label="Add test chips"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Chips</span>
-            </button>
-
-            <button
-              onClick={handleTestRemove}
-              disabled={loading}
-              className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium transition-all focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
-              aria-label="Remove test chips"
-            >
-              <Minus className="w-4 h-4" />
-              <span>Remove Chips</span>
-            </button>
-          </div>
-
-          <div className="text-sm text-gray-300">
-            Current Balance:{" "}
-            <span className="text-amber-400 font-medium">
-              {profile.chips.toLocaleString()}
-            </span>{" "}
-            chips
+              {/* Celebration Effect */}
+              <div className="text-3xl sm:text-4xl animate-bounce">🎉</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Purchase Feedback */}
-      {purchaseSuccess && (
-        <div
-          className={`border rounded-xl p-4 text-center shadow-md ${
-            purchaseSuccess.includes("failed")
-              ? "bg-red-500/10 border-red-500/30 text-red-300"
-              : "bg-green-500/10 border-green-500/30 text-green-300"
-          }`}
-        >
-          <p className="font-medium">{purchaseSuccess}</p>
+      {/* Error Feedback */}
+      {purchaseSuccess && purchaseSuccess.includes("Failed") && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-gray-800 border border-red-500/30 rounded-2xl p-6 sm:p-8 w-full max-w-sm sm:max-w-md shadow-2xl">
+            <div className="text-center space-y-4">
+              <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-red-500 rounded-full flex items-center justify-center">
+                <svg
+                  className="w-10 h-10 sm:w-12 sm:h-12 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                  Payment Failed
+                </h3>
+                <p className="text-sm sm:text-base text-gray-300">
+                  {purchaseSuccess}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -364,12 +377,8 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                     </span>
                   </div>
 
-                  <div className="text-lg font-semibold text-gray-400 line-through">
-                    ${item.price_real_money}
-                  </div>
-
-                  <div className="text-green-400 text-sm font-medium">
-                    Free (Testing Mode)
+                  <div className="text-2xl font-bold text-white">
+                    ${item.price_real_money.toFixed(2)}
                   </div>
 
                   <div className="text-gray-400 text-xs">
@@ -381,7 +390,7 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                 </div>
 
                 <button
-                  onClick={() => handlePurchase(item)}
+                  onClick={() => handlePurchaseClick(item)}
                   disabled={loading}
                   className={`w-full bg-gradient-to-r ${colorClass} text-white py-2 rounded-md font-medium hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 flex items-center justify-center space-x-2`}
                   aria-label={`Purchase ${item.name}`}
@@ -394,7 +403,7 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                   ) : (
                     <>
                       <ShoppingCart className="w-4 h-4" />
-                      <span>Get Free Chips</span>
+                      <span>Buy Now</span>
                     </>
                   )}
                 </button>
@@ -404,16 +413,31 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
         })}
       </div>
 
+      {/* Stripe Checkout Modal */}
+      {clientSecret && selectedItem && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <StripeWrapper clientSecret={clientSecret}>
+            <CheckoutForm
+              itemName={selectedItem.name}
+              amount={selectedItem.price_real_money}
+              chips={selectedItem.chip_amount}
+              onSuccess={handlePaymentSuccess}
+              onCancel={handleCancelPayment}
+            />
+          </StripeWrapper>
+        </div>
+      )}
+
       {/* Footer Note */}
       <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 text-center shadow-lg">
-        <h3 className="text-lg font-semibold text-white">Development Mode</h3>
+        <h3 className="text-lg font-semibold text-white">Secure Payments</h3>
         <p className="text-gray-400 text-sm mt-2">
-          Payment integration is under development. All chips are currently free
-          for testing.
+          All transactions are secured by Stripe. Your payment information is
+          never stored on our servers.
         </p>
         <div className="flex justify-center space-x-4 text-gray-400 text-xs mt-4">
-          <span>🔒 SSL Ready</span>
-          <span>💳 Stripe Integration Pending</span>
+          <span>🔒 SSL Encrypted</span>
+          <span>💳 Stripe Powered</span>
           <span>🛡️ PCI Compliant</span>
         </div>
       </div>
