@@ -169,7 +169,7 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
 
     try {
       const response = await fetch(
-        "http://localhost:3001/api/create-payment-intent",
+        "https://www.biglsickgames.com/api/create-payment-intent", // ✅ Fixed!
         {
           method: "POST",
           headers: {
