@@ -8,13 +8,16 @@ import {
   Diamond,
   Users,
   Play,
+  Info,
 } from "lucide-react";
 
 import stackEmBanner from "./images/21STACK'EM.png";
 import racingSuitsBanner from "./images/RACINGSUITS.png";
+import spaceCrashBanner from "./images/SPACECRASH.png";
 import holdEmBanner from "./images/21HOLD'EM.png";
 import multiUpBanner from "./images/21MULTI'UP.png";
 import sinkEmBanner from "./images/21SINK'EM.png";
+import deckRealmsBanner from "./images/DECKREALMS.png";
 import pokerOpolyBanner from "./images/POKER-OPOLY.png";
 
 interface UserProfile {
@@ -51,21 +54,41 @@ const games = [
   {
     id: "racing-suits",
     name: "Racing Suits",
-    color: "from-cyan-300 to-blue-900",
-    glowColor: "shadow-cyan-500/40",
-    hoverColor: "hover:from-cyan-200 hover:to-blue-800",
+    color: "from-orange-500 to-purple-900",
+    glowColor: "shadow-orange-500/40",
+    hoverColor: "hover:from-orange-400 hover:to-purple-800",
     description: "High-speed card racing adventure",
     minBet: 100,
     icon: Rocket,
-    accent: "cyan",
+    accent: "orange",
     bannerImage: racingSuitsBanner,
     specialFeatures: true,
     glassTheme: {
-      background: "from-cyan-500/10 via-blue-500/5 to-cyan-600/10",
-      border: "border-cyan-400/30",
-      glow: "shadow-cyan-500/20",
-      headerGlass: "from-cyan-400/20 via-blue-400/15 to-cyan-500/20",
-      headerBorder: "border-cyan-300/40",
+      background: "from-purple-900/10 via-purple-800/5 to-orange-600/10",
+      border: "border-orange-500/30",
+      glow: "shadow-orange-500/20",
+      headerGlass: "from-purple-800/20 via-purple-700/15 to-orange-500/20",
+      headerBorder: "border-orange-400/40",
+    },
+  },
+  {
+    id: "space-crash",
+    name: "Space Crash",
+    color: "from-gray-800 to-black",
+    glowColor: "shadow-gray-800/40",
+    hoverColor: "hover:from-gray-700 hover:to-gray-900",
+    description: "Blast off before the crash",
+    minBet: "Full Bankroll",
+    icon: Rocket,
+    accent: "black",
+    bannerImage: spaceCrashBanner,
+    specialFeatures: true,
+    glassTheme: {
+      background: "from-gray-800/10 via-gray-900/5 to-black/10",
+      border: "border-gray-600/30",
+      glow: "shadow-gray-800/20",
+      headerGlass: "from-gray-700/20 via-gray-800/15 to-gray-900/20",
+      headerBorder: "border-gray-600/40",
     },
   },
   {
@@ -73,7 +96,7 @@ const games = [
     name: "21 Hold'em",
     color: "from-yellow-300 to-red-900",
     glowColor: "shadow-yellow-500/40",
-    hoverColor: "hover:from-yellow-200 hover:to-red-800",
+    hover: "from-yellow-200 hover:to-red-800",
     description: "Strategic card game with poker elements",
     minBet: 1000,
     icon: Spades,
@@ -85,6 +108,45 @@ const games = [
       glow: "shadow-yellow-500/20",
       headerGlass: "from-yellow-400/20 via-orange-400/15 to-red-500/20",
       headerBorder: "border-yellow-300/40",
+    },
+  },
+  {
+    id: "deck-realms",
+    name: "Deck Realms",
+    color: "from-amber-300 to-red-900",
+    glowColor: "shadow-amber-500/40",
+    hoverColor: "hover:from- |amber-200 hover:to-red-800",
+    description: "Build and customize your ultimate deck",
+    minBet: "Full Bankroll",
+    icon: Diamond,
+    accent: "yellow",
+    bannerImage: deckRealmsBanner,
+    specialFeatures: true,
+    glassTheme: {
+      background: "from-amber-500/10 via-yellow-500/5 to-red-600/10",
+      border: "border-amber-400/30",
+      glow: "shadow-amber-500/20",
+      headerGlass: "from-amber-400/20 via-yellow-400/15 to-red-500/20",
+      headerBorder: "border-amber-300/40",
+    },
+  },
+  {
+    id: "sink-em",
+    name: "21 Sink'em",
+    color: "from-blue-400 to-blue-900",
+    glowColor: "shadow-blue-500/40",
+    hoverColor: "hover:from-blue-300 hover:to-blue-800",
+    description: "Sink your opponents with strategic plays",
+    minBet: 750,
+    icon: Diamond,
+    accent: "blue",
+    bannerImage: sinkEmBanner,
+    glassTheme: {
+      background: "from-blue-500/10 via-blue-600/5 to-blue-700/10",
+      border: "border-blue-400/30",
+      glow: "shadow-blue-500/20",
+      headerGlass: "from-blue-400/20 via-blue-500/15 to-blue-600/20",
+      headerBorder: "border-blue-300/40",
     },
   },
   {
@@ -104,26 +166,6 @@ const games = [
       glow: "shadow-pink-500/20",
       headerGlass: "from-pink-400/20 via-purple-400/15 to-pink-500/20",
       headerBorder: "border-pink-300/40",
-    },
-  },
-  {
-    id: "sink-em",
-    name: "Deck Realms",
-    color: "from-amber-300 to-red-900",
-    glowColor: "shadow-amber-500/40",
-    hoverColor: "hover:from-amber-200 hover:to-red-800",
-    description: "Build and customize your ultimate deck",
-    minBet: "Full Bankroll",
-    icon: Diamond,
-    accent: "yellow",
-    bannerImage: sinkEmBanner,
-    specialFeatures: true,
-    glassTheme: {
-      background: "from-amber-500/10 via-yellow-500/5 to-red-600/10",
-      border: "border-amber-400/30",
-      glow: "shadow-amber-500/20",
-      headerGlass: "from-amber-400/20 via-yellow-400/15 to-red-500/20",
-      headerBorder: "border-amber-300/40",
     },
   },
   {
@@ -152,9 +194,14 @@ interface GamesGridProps {
   profile: UserProfile;
 }
 
-export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
+export default function GamesGrid({
+  profile,
+  Channels,
+  onGameClick,
+}: GamesGridProps) {
   const [gameOrder, setGameOrder] = useState(games.map((g) => g.id));
   const [animatedGames, setAnimatedGames] = useState<Set<string>>(new Set());
+  const [infoModalOpen, setInfoModalOpen] = useState<string | null>(null);
 
   // Static player counts until games are connected to database
   const staticPlayerCounts: Record<string, number> = {
@@ -162,6 +209,7 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
     "hold-em": 0,
     "multi-up": 0,
     "sink-em": 0,
+    "deck-realms": 0,
     pokeroply: 0,
     "space-crash": 0,
     "integration-test": 0,
@@ -200,129 +248,181 @@ export default function GamesGrid({ profile, onGameClick }: GamesGridProps) {
     .map((id) => games.find((g) => g.id === id)!)
     .filter(Boolean);
 
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 pb-8">
-      {orderedGames.map((game, index) => {
-        const IconComponent = game.icon;
-        const isAnimated = animatedGames.has(game.id);
+  const hasPlayButton = (id: string) =>
+    id === "racing-suits" || id === "space-crash" || id === "stack-em";
 
-        return (
-          <div
-            key={game.id}
-            className={`bg-gradient-to-br ${
-              game.glassTheme.background
-            } backdrop-blur-xl border ${
-              game.glassTheme.border
-            } rounded-2xl shadow-xl ${
-              game.glassTheme.glow
-            } overflow-hidden hover:border-opacity-60 transition-all duration-700 hover:scale-[1.02] hover:shadow-2xl transform ${
-              isAnimated
-                ? "translate-y-0 opacity-100 scale-100 rotate-0"
-                : "translate-y-8 opacity-0 scale-90 rotate-2"
-            }`}
-            style={{
-              transitionDelay: `${index * 80}ms`,
-              transitionDuration: "400ms",
-              transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
-              animationFillMode: "both",
-            }}
-          >
-            {/* Game Header */}
-            <div className="relative">
-              {/* Themed Glass Heading */}
-              <div
-                className={`relative h-20 bg-gradient-to-r ${game.glassTheme.headerGlass} backdrop-blur-xl border-b ${game.glassTheme.headerBorder} rounded-t-2xl overflow-hidden`}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/3 via-white/8 to-white/3"></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <h3 className="text-white font-bold text-2xl drop-shadow-lg filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                      {game.name}
-                    </h3>
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 pb-8">
+        {orderedGames.map((game, index) => {
+          const IconComponent = game.icon;
+          const isAnimated = animatedGames.has(game.id);
+
+          return (
+            <div
+              key={game.id}
+              className={`bg-gradient-to-br ${
+                game.glassTheme.background
+              } backdrop-blur-xl border ${
+                game.glassTheme.border
+              } rounded-2xl shadow-xl ${game.glassTheme.glow} overflow-hidden `}
+              style={{
+                transitionDelay: `${index * 80}ms`,
+                transitionDuration: "400ms",
+                transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+                animationFillMode: "both",
+              }}
+            >
+              {/* Game Header */}
+              <div className="relative">
+                {/* Themed Glass Heading */}
+                <div
+                  className={`relative h-20 bg-gradient-to-r ${game.glassTheme.headerGlass} backdrop-blur-xl border-b ${game.glassTheme.headerBorder} rounded-t-2xl overflow-hidden`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/3 via-white/8 to-white/3"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <h3 className="text-white font-bold text-2xl drop-shadow-lg filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                        {game.name}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20"></div>
+                  {/* Subtle animated elements */}
+                  <div className="absolute top-4 right-6 w-2 h-2 bg-white/50 rounded-full animate-pulse shadow-sm"></div>
+                  <div className="absolute bottom-4 left-8 w-1.5 h-1.5 bg-white/40 rounded-full animate-ping shadow-sm"></div>
+                </div>
+
+                {/* Game Stats Bar */}
+                <div
+                  className={`p-4 border-b ${game.glassTheme.border} bg-gradient-to-r from-black/20 via-black/10 to-black/20 backdrop-blur-sm`}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    {/* Online Status */}
+                    <div className="flex items-center space-x-2 bg-green-500/20 px-3 py-1 rounded-full border border-green-500/40 backdrop-blur-sm">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          staticPlayerCounts[game.id] > 0
+                            ? "bg-green-400 animate-pulse"
+                            : "bg-gray-400"
+                        }`}
+                      ></div>
+                      <Users className="w-4 h-4 text-green-300" />
+                      <span className="text-green-300 text-sm font-semibold">
+                        {staticPlayerCounts[game.id]}
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-gray-400 text-xs">Min Buyin</p>
+                      <p className="text-yellow-400 font-semibold text-sm">
+                        {typeof game.minBet === "string"
+                          ? game.minBet
+                          : game.minBet
+                            ? `${game.minBet.toLocaleString()} chips`
+                            : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* User Online Status */}
+                  <div className="px-4 pb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                      <span className="text-sm font-medium text-green-400">
+                        You are online
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20"></div>
-                {/* Subtle animated elements */}
-                <div className="absolute top-4 right-6 w-2 h-2 bg-white/50 rounded-full animate-pulse shadow-sm"></div>
-                <div className="absolute bottom-4 left-8 w-1.5 h-1.5 bg-white/40 rounded-full animate-ping shadow-sm"></div>
               </div>
 
-              {/* Game Stats Bar */}
-              <div
-                className={`p-4 border-b ${game.glassTheme.border} bg-gradient-to-r from-black/20 via-black/10 to-black/20 backdrop-blur-sm`}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  {/* Online Status */}
-                  <div className="flex items-center space-x-2 bg-green-500/20 px-3 py-1 rounded-full border border-green-500/40 backdrop-blur-sm">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        staticPlayerCounts[game.id] > 0
-                          ? "bg-green-400 animate-pulse"
-                          : "bg-gray-400"
-                      }`}
-                    ></div>
-                    <Users className="w-4 h-4 text-green-300" />
-                    <span className="text-green-300 text-sm font-semibold">
-                      {staticPlayerCounts[game.id]}
-                    </span>
+              {/* Game Content */}
+              <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
+                {/* Banner Image */}
+                <div className="relative h-32 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border border-orange-500/40 rounded-lg overflow-hidden">
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-r ${game.glassTheme.background} backdrop-blur-sm`}
+                  ></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <img
+                      src={game.bannerImage}
+                      alt={`${game.name} Banner`}
+                      className="w-full h-full object-cover opacity-90"
+                    />
                   </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/30"></div>
+                  <div
+                    className={`absolute inset-0 border ${game.glassTheme.border} rounded-lg`}
+                  ></div>
+                </div>
 
-                  <div className="text-right">
-                    <p className="text-gray-400 text-xs">Min Buyin</p>
-                    <p className="text-yellow-400 font-semibold text-sm">
+                {/* Action Button */}
+                {hasPlayButton(game.id) ? (
+                  <button
+                    onClick={() => onGameClick(game.id)}
+                    className={`w-full bg-gradient-to-r ${game.color} ${game.hoverColor} text-white py-3 font-bold text-lg transition-all duration-300 rounded-lg shadow-lg ${game.glowColor} hover:shadow-xl flex items-center justify-center space-x-2 touch-manipulation active:scale-95 hover:scale-[1.02] border border-white/20 hover:border-white/40`}
+                  >
+                    <Play className="w-5 h-5" />
+                    <span>PLAY</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setInfoModalOpen(game.id)}
+                    className={`w-full bg-gradient-to-r ${game.color} ${game.hoverColor} text-white py-3 font-bold text-lg transition-all duration-300 rounded-lg shadow-lg ${game.glowColor} hover:shadow-xl flex items-center justify-center space-x-2 touch-manipulation active:scale-95 hover:scale-[1.02] border border-white/20 hover:border-white/40`}
+                  >
+                    <Info className="w-5 h-5" />
+                    <span>MORE INFO</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Simple Info Modal */}
+      {infoModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setInfoModalOpen(null)}
+        >
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const game = games.find((g) => g.id === infoModalOpen);
+              if (!game) return null;
+              return (
+                <>
+                  <h2 className="text-2xl font-bold text-white mb-4">
+                    {game.name}
+                  </h2>
+                  <p className="text-gray-300 mb-2">{game.description}</p>
+                  {game.minBet && (
+                    <p className="text-gray-400 text-sm mb-4">
+                      Min Buy-in:{" "}
                       {typeof game.minBet === "string"
                         ? game.minBet
-                        : game.minBet
-                        ? `${game.minBet.toLocaleString()} chips`
-                        : "N/A"}
+                        : `${game.minBet.toLocaleString()} chips`}
                     </p>
-                  </div>
-                </div>
-
-                {/* User Online Status */}
-                <div className="px-4 pb-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                    <span className="text-sm font-medium text-green-400">
-                      You are online
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Game Content */}
-            <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
-              {/* Banner Image */}
-              <div className="relative h-32 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border border-orange-500/40 rounded-lg overflow-hidden">
-                <div
-                  className={`absolute inset-0 bg-gradient-to-r ${game.glassTheme.background} backdrop-blur-sm`}
-                ></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <img
-                    src={game.bannerImage}
-                    alt={`${game.name} Banner`}
-                    className="w-full h-full object-cover opacity-90"
-                  />
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/30"></div>
-                <div
-                  className={`absolute inset-0 border ${game.glassTheme.border} rounded-lg`}
-                ></div>
-              </div>
-
-              {/* Play Button */}
-              <button
-                onClick={() => onGameClick(game.id)}
-                className={`w-full bg-gradient-to-r ${game.color} ${game.hoverColor} text-white py-3 font-bold text-lg transition-all duration-300 rounded-lg shadow-lg ${game.glowColor} hover:shadow-xl flex items-center justify-center space-x-2 touch-manipulation active:scale-95 hover:scale-[1.02] border border-white/20 hover:border-white/40`}
-              >
-                <Play className="w-5 h-5" />
-                <span>PLAY SOON</span>
-              </button>
-            </div>
+                  )}
+                  <p className="text-gray-500 text-sm mb-6">
+                    This game is coming soon. Stay tuned for updates!
+                  </p>
+                  <button
+                    onClick={() => setInfoModalOpen(null)}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-800 text-white py-2 rounded-lg font-semibold hover:from-blue-500 hover:to-blue-700 transition"
+                  >
+                    Close
+                  </button>
+                </>
+              );
+            })()}
           </div>
-        );
-      })}
-    </div>
+        </div>
+      )}
+    </>
   );
 }

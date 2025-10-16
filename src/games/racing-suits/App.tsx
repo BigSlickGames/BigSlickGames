@@ -323,20 +323,49 @@ function App() {
     userId,
   ]);
 
+  // Replace the existing resetGame function with this updated version:
+
   const resetGame = async () => {
-    if (gameInProgress) {
-      const newExperience = playerExperience + 10;
-      let newLevel = playerLevel;
-      let newBalance = chipBalance;
-      if (Math.floor(newExperience / 1000) > playerLevel - 1) {
-        newLevel = playerLevel + 1;
-        newBalance = chipBalance + 500;
-        setChipBalance(newBalance);
-        await updateChipsInDB(newBalance);
+    // Only award XP if the game was won and player had winning bets
+    if (gameWon && gameInProgress) {
+      // Calculate total winnings
+      let totalWinnings = 0;
+
+      // Pre-race bet winnings (4x multiplier)
+      if (currentBets[gameWon] > 0) {
+        totalWinnings += currentBets[gameWon] * 4;
       }
-      setPlayerExperience(newExperience);
-      await updateProgressInDB(newLevel, newExperience);
+
+      // Live bet winnings
+      const liveBetWinnings = liveBets
+        .filter((bet) => bet.suit === gameWon)
+        .reduce((total, bet) => total + Math.round(bet.amount * bet.odds), 0);
+      totalWinnings += liveBetWinnings;
+
+      // Only give XP if player actually won something
+      if (totalWinnings > 0) {
+        // 1 chip won = 1 XP
+        const xpGained = totalWinnings;
+        const newExperience = playerExperience + xpGained;
+
+        let newLevel = playerLevel;
+        let newBalance = chipBalance;
+
+        // Check for level up (every 1000 XP)
+        if (Math.floor(newExperience / 1000) > playerLevel - 1) {
+          newLevel = playerLevel + 1;
+          // newBalance = chipBalance + 500;
+          // setChipBalance(newBalance);
+          // await updateChipsInDB(newBalance);
+        }
+
+        setPlayerExperience(newExperience);
+        setPlayerLevel(newLevel);
+        await updateProgressInDB(newLevel, newExperience);
+      }
     }
+
+    // Reset game state
     setPositions({ hearts: 0, diamonds: 0, clubs: 0, spades: 0 });
     setDeck(createDeck());
     setFlippedCard(null);
