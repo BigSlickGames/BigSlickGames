@@ -30,7 +30,6 @@ function App() {
   const [cashOutMultiplier, setCashOutMultiplier] = useState<number | null>(
     null
   );
-
   const [playerName, setPlayerName] = useState("Player");
   const [loading, setLoading] = useState(true);
   const [chipBalance, setChipBalance] = useState(0);
@@ -39,7 +38,7 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [betAmount, setBetAmount] = useState(5);
-  const [autoCashOut, setAutoCashOut] = useState<number>(1.0);
+  const [autoCashOut, setAutoCashOut] = useState<number>(2.0);
   const [autoCashOutEnabled, setAutoCashOutEnabled] = useState(false);
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [currentMultiplier, setCurrentMultiplier] = useState(1.0);
@@ -49,13 +48,36 @@ function App() {
   const [winnings, setWinnings] = useState(0);
   const [liveBets, setLiveBets] = useState<LiveBet[]>([]);
   const [history, setHistory] = useState<number[]>([]);
-  const animationRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const crashPointRef = useRef<number | null>(null);
   const [showCrash, setShowCrash] = useState(false);
   const [rocketTrail, setRocketTrail] = useState<{ x: number; y: number }[]>(
     []
   );
+
+  // Refs for animation loop
+  const animationRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const crashPointRef = useRef<number | null>(null);
+  const isRunningRef = useRef<boolean>(false);
+  const hasCashedOutRef = useRef<boolean>(false);
+  const autoCashOutRef = useRef<number>(2.0);
+  const autoCashOutEnabledRef = useRef<boolean>(false);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isRunningRef.current = isGameRunning;
+  }, [isGameRunning]);
+
+  useEffect(() => {
+    hasCashedOutRef.current = hasCashedOut;
+  }, [hasCashedOut]);
+
+  useEffect(() => {
+    autoCashOutRef.current = autoCashOut;
+  }, [autoCashOut]);
+
+  useEffect(() => {
+    autoCashOutEnabledRef.current = autoCashOutEnabled;
+  }, [autoCashOutEnabled]);
 
   // Helper function to safely convert to fixed decimal
   const safeToFixed = (value: any, decimals: number = 2): string => {
@@ -139,12 +161,12 @@ function App() {
     }
   };
 
-  const updateGameStats = async (won: boolean) => {
+  const updateGameStats = async (won: boolean, xpGained: number = 0) => {
     if (!userId) return;
     try {
       const { data: currentWallet } = await supabase
         .from("user_wallet")
-        .select("games_played, games_won, games_won_by_type")
+        .select("games_played, games_won, games_won_by_type, experience, level")
         .eq("user_id", userId)
         .single();
       if (currentWallet) {
@@ -156,12 +178,40 @@ function App() {
         if (won) {
           gamesWonByType.crash = (gamesWonByType.crash || 0) + 1;
         }
+
+        // Handle XP and level up only on win
+        let newExperience = currentWallet.experience || 0;
+        let newLevel = currentWallet.level || 1;
+
+        if (won && xpGained > 0) {
+          newExperience += xpGained;
+
+          // Check for level up (every 1000 XP)
+          const oldLevelThreshold = Math.floor(
+            (currentWallet.experience || 0) / 1000
+          );
+          const newLevelThreshold = Math.floor(newExperience / 1000);
+
+          if (newLevelThreshold > oldLevelThreshold) {
+            newLevel = newLevelThreshold + 1;
+            // Award 500 chips for level up
+            const levelUpChips = chipBalance + 500;
+            setChipBalance(levelUpChips);
+            await updateChipsInDB(levelUpChips);
+          }
+
+          setPlayerExperience(newExperience);
+          setPlayerLevel(newLevel);
+        }
+
         await supabase
           .from("user_wallet")
           .update({
             games_played: newGamesPlayed,
             games_won: newGamesWon,
             games_won_by_type: gamesWonByType,
+            experience: newExperience,
+            level: newLevel,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId);
@@ -195,20 +245,27 @@ function App() {
     }
   };
 
+  const cleanupAnimation = () => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+  };
+
   const startGame = () => {
     if (chipBalance < betAmount || betAmount <= 0 || isGameRunning) {
-      console.log("Start game blocked", {
-        chipBalance,
-        betAmount,
-        isGameRunning,
-      });
       return;
     }
 
-    console.log("Starting game with bet:", betAmount);
+    // Clean up any existing animation
+    cleanupAnimation();
+
+    // Deduct bet amount
     const newBalance = chipBalance - betAmount;
     setChipBalance(newBalance);
     updateChipsInDB(newBalance);
+
+    // Add to live bets
     setLiveBets((prev) => [
       ...prev,
       {
@@ -218,31 +275,34 @@ function App() {
         timestamp: Date.now(),
       },
     ]);
+
+    // Reset game state
     setHasCashedOut(false);
+    hasCashedOutRef.current = false;
     setGameResult(null);
     setWinnings(0);
     setShowCrash(false);
     setRocketTrail([]);
-    const newCrashPoint = generateCrashPoint();
+    setCashOutMultiplier(null);
 
+    // Generate new crash point
+    const newCrashPoint = generateCrashPoint();
     setCrashPoint(newCrashPoint);
     crashPointRef.current = newCrashPoint;
+
+    // Start game
     setCurrentMultiplier(1.0);
     startTimeRef.current = Date.now();
     setIsGameRunning(true);
-    console.log("Game started", {
-      crashPoint: newCrashPoint,
-      isGameRunning: true,
-    });
+    isRunningRef.current = true;
   };
 
   const animate = useCallback(() => {
-    if (!startTimeRef.current || !crashPointRef.current || !isGameRunning) {
-      console.log("Animation stopped: Invalid state", {
-        startTime: startTimeRef.current,
-        crashPoint: crashPointRef.current,
-        isGameRunning,
-      });
+    if (
+      !startTimeRef.current ||
+      !crashPointRef.current ||
+      !isRunningRef.current
+    ) {
       return;
     }
 
@@ -251,15 +311,6 @@ function App() {
       1 + Math.pow(elapsed * 0.25, 1.3),
       crashPointRef.current
     );
-
-    console.log({
-      newMultiplier: safeToFixed(newMultiplier, 2),
-      autoCashOut: safeToFixed(autoCashOut, 2),
-      hasCashedOut,
-      isGameRunning,
-      condition:
-        newMultiplier >= autoCashOut - 0.01 && !hasCashedOut && isGameRunning,
-    });
 
     setCurrentMultiplier(newMultiplier);
 
@@ -275,136 +326,131 @@ function App() {
       { x: rocketX, y: rocketY },
     ]);
 
-    // Auto cash-out check (prioritized)
-    const safeAutoCashOut = typeof autoCashOut === "number" ? autoCashOut : 1.0;
+    // Check for auto cash-out (exact match)
     if (
-      autoCashOutEnabled &&
-      newMultiplier >= safeAutoCashOut - 0.01 &&
-      !hasCashedOut &&
-      isGameRunning
+      autoCashOutEnabledRef.current &&
+      !hasCashedOutRef.current &&
+      newMultiplier >= autoCashOutRef.current
     ) {
-      console.log("Triggering auto cash-out", { newMultiplier, autoCashOut });
-      handleCashOut(newMultiplier);
+      // Use the exact auto cash-out value
+      handleCashOut(autoCashOutRef.current);
       return;
     }
 
-    // Crash check (only if not cashed out)
-    if (newMultiplier >= crashPointRef.current && !hasCashedOut) {
-      setIsGameRunning(false);
-      setShowCrash(true);
+    // Check for crash
+    if (newMultiplier >= crashPointRef.current && !hasCashedOutRef.current) {
+      handleCrash();
+      return;
+    }
 
-      document.body.classList.add("screen-shake");
-      setTimeout(() => document.body.classList.remove("screen-shake"), 500);
-
-      setTimeout(() => setShowCrash(false), 1000);
-      setHistory((prev) => [crashPointRef.current!, ...prev.slice(0, 9)]);
-      setGameResult("loss");
-      updateGameStats(false);
-    } else if (!hasCashedOut) {
+    // Continue animation only if game is still running
+    if (isRunningRef.current && !hasCashedOutRef.current) {
       animationRef.current = requestAnimationFrame(animate);
     }
-  }, [isGameRunning, hasCashedOut, autoCashOut, autoCashOutEnabled]);
+  }, []);
 
-  // Start animation when isGameRunning becomes true
-  useEffect(() => {
-    if (isGameRunning) {
-      console.log("useEffect: Starting animation loop");
-      animationRef.current = requestAnimationFrame(animate);
-    }
-    return () => {
-      if (animationRef.current) {
-        console.log("useEffect: Cleaning up animation loop");
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = null;
-      }
-    };
-  }, [isGameRunning, animate]);
+  const handleCrash = () => {
+    cleanupAnimation();
+    setIsGameRunning(false);
+    isRunningRef.current = false;
+    setShowCrash(true);
+
+    // Screen shake effect
+    document.body.classList.add("screen-shake");
+    setTimeout(() => document.body.classList.remove("screen-shake"), 500);
+    setTimeout(() => setShowCrash(false), 1000);
+
+    // Update history
+    setHistory((prev) => [crashPointRef.current!, ...prev.slice(0, 9)]);
+
+    // Update live bet as crashed
+    setLiveBets((prev) =>
+      prev.map((bet, index) =>
+        index === prev.length - 1 ? { ...bet, multiplier: -1 } : bet
+      )
+    );
+
+    setGameResult("loss");
+    updateGameStats(false, 0); // No XP on loss
+  };
 
   const handleCashOut = (multiplierToUse?: number) => {
-    // Ensure we always have a valid number
+    if (!isRunningRef.current || hasCashedOutRef.current) {
+      return;
+    }
+
+    // Clean up animation immediately
+    cleanupAnimation();
+
+    // Use provided multiplier or current multiplier
     const finalMultiplier =
       typeof multiplierToUse === "number" ? multiplierToUse : currentMultiplier;
 
-    console.log("handleCashOut called", {
-      finalMultiplier,
-      multiplierToUse,
-      currentMultiplier,
-      hasCashedOut,
-      isGameRunning,
-    });
-
-    if (!isGameRunning || hasCashedOut) {
-      console.log("Cash out blocked: Game not running or already cashed out", {
-        isGameRunning,
-        hasCashedOut,
-      });
-      return;
-    }
-
-    // Validate finalMultiplier is a valid number
+    // Validate multiplier
     if (typeof finalMultiplier !== "number" || isNaN(finalMultiplier)) {
       console.error("Invalid multiplier:", finalMultiplier);
       return;
     }
 
+    // Mark as cashed out
     setHasCashedOut(true);
+    hasCashedOutRef.current = true;
     setIsGameRunning(false);
+    isRunningRef.current = false;
     setCashOutMultiplier(finalMultiplier);
 
+    // Calculate winnings
     const winAmount = Math.floor(betAmount * finalMultiplier);
+    const profit = winAmount - betAmount;
     const newBalance = chipBalance + winAmount;
+
+    // Update balance
     setChipBalance(newBalance);
     updateChipsInDB(newBalance);
     setWinnings(winAmount);
     setGameResult("win");
+
+    // Update live bet with cash out multiplier
     setLiveBets((prev) =>
-      prev.map((bet) =>
-        bet.id === liveBets[liveBets.length - 1].id
+      prev.map((bet, index) =>
+        index === prev.length - 1
           ? { ...bet, multiplier: finalMultiplier }
           : bet
       )
     );
-    updateGameStats(true);
 
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-    console.log("Cash out completed", {
-      winAmount,
-      newBalance,
-      finalMultiplier,
-      betAmount,
-      gameResult: "win",
-    });
+    // Award XP equal to chips won (profit only)
+    updateGameStats(true, profit);
   };
 
-  const resetGame = async () => {
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+  // Start animation when game starts
+  useEffect(() => {
+    if (isGameRunning && !animationRef.current) {
+      animationRef.current = requestAnimationFrame(animate);
+    }
+
+    return () => {
+      cleanupAnimation();
+    };
+  }, [isGameRunning, animate]);
+
+  const resetGame = () => {
+    cleanupAnimation();
     setIsGameRunning(false);
+    isRunningRef.current = false;
     setHasCashedOut(false);
+    hasCashedOutRef.current = false;
     setCrashPoint(null);
     setCashOutMultiplier(null);
-
     crashPointRef.current = null;
+    startTimeRef.current = null;
     setGameResult(null);
     setCurrentMultiplier(1.0);
     setShowCrash(false);
     setRocketTrail([]);
-    const newExperience = playerExperience + 10;
-    let newLevel = playerLevel;
-    let newBalance = chipBalance;
-    if (Math.floor(newExperience / 1000) > playerLevel - 1) {
-      newLevel = playerLevel + 1;
-      newBalance = chipBalance + 500;
-      setChipBalance(newBalance);
-      await updateChipsInDB(newBalance);
-    }
-    setPlayerExperience(newExperience);
-    await updateProgressInDB(newLevel, newExperience);
   };
 
-  // Calculate rocket position
+  // Calculate rocket position for display
   const maxTime = 30;
   const elapsed =
     isGameRunning && startTimeRef.current
@@ -518,7 +564,9 @@ function App() {
         <div className="max-w-4xl mx-auto relative z-10">
           {/* HEADER */}
           <div className="glass-card rounded-xl p-3 mb-4 shadow-xl border border-orange-500/20 bg-black/80">
-            <div className="flex items-center justify-between">
+            {/* Main header row */}
+            <div className="flex items-center justify-between relative mb-3 sm:mb-0">
+              {/* Left: Avatar with XP Ring + User Info */}
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => (window.location.href = "/")}
@@ -602,6 +650,19 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Center: Tutorial Button (Desktop only) */}
+              <div className="hidden sm:flex absolute left-1/2 transform -translate-x-1/2">
+                <button
+                  onClick={() => setShowTutorial(true)}
+                  className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-300 flex items-center gap-2"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span className="text-sm">Tutorial</span>
+                </button>
+              </div>
+
+              {/* Right: Chips */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 glass-card px-3 py-1.5 rounded-full bg-black/50">
                   <Coins className="w-4 h-4 text-orange-400" />
@@ -609,14 +670,18 @@ function App() {
                     {chipBalance.toLocaleString()}
                   </span>
                 </div>
-                <button
-                  onClick={() => setShowTutorial(true)}
-                  className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold p-2 rounded-lg transition-all duration-300"
-                  title="Tutorial"
-                >
-                  <BookOpen className="w-4 h-4" />
-                </button>
               </div>
+            </div>
+
+            {/* Mobile Tutorial Button Row - Centered below */}
+            <div className="sm:hidden flex justify-center">
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-300 flex items-center gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span className="text-sm">Tutorial</span>
+              </button>
             </div>
           </div>
 
@@ -661,23 +726,22 @@ function App() {
                   </label>
                   <input
                     type="range"
-                    min="1"
+                    min="1.01"
                     max="10"
-                    step="0.1"
+                    step="0.01"
                     value={autoCashOut}
                     onChange={(e) => {
                       const newValue = parseFloat(e.target.value);
                       if (!isNaN(newValue)) {
-                        console.log("Auto Cash Out set to:", newValue);
                         setAutoCashOut(newValue);
                       }
                     }}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
                     style={{
                       background: `linear-gradient(to right, #ff6b35 0%, #ff6b35 ${
-                        ((autoCashOut - 1) / 9) * 100
+                        ((autoCashOut - 1.01) / 8.99) * 100
                       }%, #1a1a1a ${
-                        ((autoCashOut - 1) / 9) * 100
+                        ((autoCashOut - 1.01) / 8.99) * 100
                       }%, #1a1a1a 100%)`,
                     }}
                     disabled={isGameRunning || !autoCashOutEnabled}
@@ -909,12 +973,16 @@ function App() {
                             className={`font-bold text-sm ${
                               bet.multiplier > 0
                                 ? "text-green-400"
-                                : "text-orange-400"
+                                : bet.multiplier === -1
+                                  ? "text-red-400"
+                                  : "text-orange-400"
                             }`}
                           >
                             {bet.multiplier > 0
-                              ? `Cashed @ ${safeToFixed(bet.multiplier, 2)}x`
-                              : "Crashed"}
+                              ? `✓ Cashed @ ${safeToFixed(bet.multiplier, 2)}x`
+                              : bet.multiplier === -1
+                                ? "✗ Crashed"
+                                : "🚀 Active"}
                           </span>
                         </div>
                       </div>
@@ -955,6 +1023,7 @@ function App() {
         </div>
       </div>
 
+      {/* GAME RESULT MODAL */}
       {gameResult && !isGameRunning && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="dark-card rounded-2xl p-4 max-w-sm w-full shadow-2xl relative overflow-hidden orange-glow">
@@ -962,13 +1031,13 @@ function App() {
             <div className="relative z-10">
               <div className="text-center mb-4">
                 <div className="flex items-center justify-center gap-3 mb-3">
-                  <span className="text-5xl"></span>
-                  <h2 className="text-white font-bold text-2xl">
-                    {gameResult === "win" ? "Cashed Out!" : "Crashed!"}
-                  </h2>
                   <span className="text-5xl">
                     {gameResult === "win" ? "💰" : "💥"}
                   </span>
+                  <h2 className="text-white font-bold text-2xl">
+                    {gameResult === "win" ? "Cashed Out!" : "Crashed!"}
+                  </h2>
+                  <span className="text-5xl">{gameResult === "win"}</span>
                 </div>
               </div>
               <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto">
@@ -989,12 +1058,20 @@ function App() {
                     </span>
                   </div>
                   {gameResult === "win" && (
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-green-400">Cashed at:</span>
-                      <span className="text-green-400 font-bold">
-                        {safeToFixed(cashOutMultiplier, 2)}x
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-green-400">Cashed at:</span>
+                        <span className="text-green-400 font-bold">
+                          {safeToFixed(cashOutMultiplier, 2)}x
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-blue-400">XP Earned:</span>
+                        <span className="text-blue-400 font-bold">
+                          +{winnings - betAmount} XP
+                        </span>
+                      </div>
+                    </>
                   )}
                   <div className="border-t border-orange-500/20 pt-2 mt-2">
                     <div className="flex justify-between items-center">
@@ -1007,7 +1084,10 @@ function App() {
                         }`}
                       >
                         {gameResult === "win" ? "+" : "-"}
-                        {gameResult === "win" ? winnings : betAmount} chips
+                        {gameResult === "win"
+                          ? winnings - betAmount
+                          : betAmount}{" "}
+                        chips
                       </span>
                     </div>
                   </div>

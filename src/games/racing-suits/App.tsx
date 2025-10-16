@@ -41,7 +41,8 @@ const VALUES = [
   "Q",
   "K",
 ];
-const TRACK_POSITIONS_LEFT = [8.33, 20, 32, 44, 56, 68, 80];
+const TRACK_POSITIONS_LEFT = [5, 21.5, 35.5, 49.75, 64.2, 78.5, 95];
+const TRACK_POSITIONS_MOBILE = [8, 25, 37, 49.5, 62, 74, 90];
 
 const createDeck = (): Card[] => {
   const deck: Card[] = [];
@@ -98,6 +99,16 @@ function App() {
   const [liveBets, setLiveBets] = useState<LiveBet[]>([]);
   const [liveBetAmount, setLiveBetAmount] = useState(5);
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   useEffect(() => {
     loadUserData();
   }, []);
@@ -380,8 +391,8 @@ function App() {
                       marker === 0
                         ? "bg-green-400"
                         : marker === 6
-                        ? "bg-yellow-400"
-                        : "bg-white/40"
+                          ? "bg-yellow-400"
+                          : "bg-white/40"
                     }`}
                   ></div>
                   <span className="text-xs text-white/60 mt-0.5 font-medium">
@@ -392,10 +403,10 @@ function App() {
             </div>
 
             <div
-              className="absolute top-1/2 transform -translate-y-1/2 transition-all duration-500 ease-out"
+              className="absolute top-1/2 transition-all duration-500 ease-out"
               style={{
-                left: `${TRACK_POSITIONS_LEFT[position]}%`,
-                transform: `translateY(-50%) ${
+                left: `${(isMobile ? TRACK_POSITIONS_MOBILE : TRACK_POSITIONS_LEFT)[position]}%`,
+                transform: `translate(-50%, -50%) ${
                   gameWon === suit ? "scale(1.3)" : "scale(1)"
                 }`,
               }}
@@ -406,12 +417,12 @@ function App() {
                   gameWon === suit
                     ? "animate-bounce bg-yellow-400/90"
                     : suit === "hearts"
-                    ? "bg-red-600"
-                    : suit === "diamonds"
-                    ? "bg-blue-600"
-                    : suit === "clubs"
-                    ? "bg-green-600"
-                    : "bg-black"
+                      ? "bg-red-600"
+                      : suit === "diamonds"
+                        ? "bg-blue-600"
+                        : suit === "clubs"
+                          ? "bg-green-600"
+                          : "bg-black"
                 }
               `}
               >
@@ -446,15 +457,16 @@ function App() {
           backgroundRepeat: "no-repeat",
         }}
       >
-        <div className="absolute inset-0 bg-black/40"></div>
         <div className="absolute top-20 left-20 w-96 h-96 bg-gradient-to-r from-orange-500/20 to-yellow-500/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 right-20 w-80 h-80 bg-gradient-to-r from-orange-600/20 to-red-500/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-orange-400/15 to-yellow-500/15 rounded-full blur-3xl"></div>
 
         <div className="max-w-4xl mx-auto relative z-10 pb-20">
           {/* MOBILE-OPTIMIZED HEADER */}
+
           <div className="glass-card rounded-xl p-3 mb-4 shadow-xl border border-orange-500/20 bg-black/80">
-            <div className="flex items-center justify-between">
+            {/* Main header row */}
+            <div className="flex items-center justify-between relative mb-3 sm:mb-0">
               {/* Left: Avatar with XP Ring + User Info */}
               <div className="flex items-center gap-3">
                 <button
@@ -476,11 +488,8 @@ function App() {
                     />
                   </svg>
                 </button>
-                {/* Avatar with Circular XP Progress */}
                 <div className="relative">
-                  {/* Circular XP Progress Ring */}
                   <svg className="w-14 h-14 -rotate-90" viewBox="0 0 100 100">
-                    {/* Background circle */}
                     <circle
                       cx="50"
                       cy="50"
@@ -489,7 +498,6 @@ function App() {
                       stroke="rgba(255,255,255,0.1)"
                       strokeWidth="4"
                     />
-                    {/* Progress circle */}
                     <circle
                       cx="50"
                       cy="50"
@@ -520,8 +528,6 @@ function App() {
                       </linearGradient>
                     </defs>
                   </svg>
-
-                  {/* Avatar with Initials */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-11 h-11 orange-gradient rounded-full flex items-center justify-center">
                       <span className="text-white font-bold text-lg">
@@ -530,8 +536,6 @@ function App() {
                     </div>
                   </div>
                 </div>
-
-                {/* User Info */}
                 <div>
                   <h2 className="text-white font-bold text-base leading-tight">
                     {playerName}
@@ -548,7 +552,18 @@ function App() {
                 </div>
               </div>
 
-              {/* Right: Chips & Tutorial */}
+              {/* Center: Tutorial Button (Desktop only) */}
+              <div className="hidden sm:flex absolute left-1/2 transform -translate-x-1/2">
+                <button
+                  onClick={() => setShowTutorial(true)}
+                  className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-300 flex items-center gap-2"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span className="text-sm">Tutorial</span>
+                </button>
+              </div>
+
+              {/* Right: Chips */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 glass-card px-3 py-1.5 rounded-full bg-black/50">
                   <Coins className="w-4 h-4 text-orange-400" />
@@ -556,19 +571,22 @@ function App() {
                     {chipBalance.toLocaleString()}
                   </span>
                 </div>
-
-                <button
-                  onClick={() => setShowTutorial(true)}
-                  className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold p-2 rounded-lg transition-all duration-300"
-                  title="Tutorial"
-                >
-                  <BookOpen className="w-4 h-4" />
-                </button>
               </div>
+            </div>
+
+            {/* Mobile Tutorial Button Row - Centered below */}
+            <div className="sm:hidden flex justify-center">
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="glass-button orange-gradient hover:opacity-90 border border-orange-400/40 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-300 flex items-center gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span className="text-sm">Tutorial</span>
+              </button>
             </div>
           </div>
 
-          <div className="w-full">
+          <div className="w-full max-w-4xl mx-auto">
             <div className="glass-card rounded-xl p-4 shadow-xl relative overflow-hidden bg-black/60 border border-orange-500/30">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent pointer-events-none"></div>{" "}
               <div className="relative z-10">
@@ -602,7 +620,10 @@ function App() {
                     }}
                   />
                 </div>
-                <div className="bg-black/80 rounded-lg p-2 mb-2 border border-orange-500/20">
+                <div
+                  className="bg-black/80 rounded-lg p-2 mb-2 border border-orange-500/20"
+                  id="suit-icons-container"
+                >
                   <div className="grid grid-cols-4 gap-2">
                     {SUITS.map((suit) => (
                       <button
@@ -613,10 +634,10 @@ function App() {
                           suit === "hearts"
                             ? "bg-red-600/80 hover:bg-red-600 border-red-500/50"
                             : suit === "diamonds"
-                            ? "bg-blue-600/80 hover:bg-blue-600 border-blue-500/50"
-                            : suit === "clubs"
-                            ? "bg-green-600/80 hover:bg-green-600 border-green-500/50"
-                            : "bg-black/80 hover:bg-black border-gray-600/50"
+                              ? "bg-blue-600/80 hover:bg-blue-600 border-blue-500/50"
+                              : suit === "clubs"
+                                ? "bg-green-600/80 hover:bg-green-600 border-green-500/50"
+                                : "bg-black/80 hover:bg-black border-gray-600/50"
                         } border text-white font-bold py-2 px-2 rounded text-xs transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center gap-1`}
                       >
                         {getSuitIcon(suit, "w-5 h-5")}
@@ -640,10 +661,10 @@ function App() {
                             bet.suit === "hearts"
                               ? "bg-red-600/20 border-red-500/30"
                               : bet.suit === "diamonds"
-                              ? "bg-blue-600/20 border-blue-500/30"
-                              : bet.suit === "clubs"
-                              ? "bg-green-600/20 border-green-500/30"
-                              : "bg-black/40 border-gray-600/30"
+                                ? "bg-blue-600/20 border-blue-500/30"
+                                : bet.suit === "clubs"
+                                  ? "bg-green-600/20 border-green-500/30"
+                                  : "bg-black/40 border-gray-600/30"
                           } border`}
                         >
                           <div className="flex items-center gap-2">
@@ -824,35 +845,35 @@ function App() {
                 flippedCard.suit === "hearts"
                   ? "bg-red-600 border-red-400"
                   : flippedCard.suit === "diamonds"
-                  ? "bg-blue-600 border-blue-400"
-                  : flippedCard.suit === "clubs"
-                  ? "bg-green-600 border-green-400"
-                  : "bg-black border-gray-400"
+                    ? "bg-blue-600 border-blue-400"
+                    : flippedCard.suit === "clubs"
+                      ? "bg-green-600 border-green-400"
+                      : "bg-black border-gray-400"
               }`}
             >
               {getSuitIcon(flippedCard.suit, "w-16 h-16 lg:w-24 lg:h-24")}
             </div>
           </div>
         )}
-        <div className="w-full max-w-md mx-auto">
+        <div className="w-full max-w-2xl mx-auto space-y-4">
           <div className="glass-card rounded-xl p-2 shadow-2xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-black-400/5 to-transparent pointer-events-none"></div>
             {SUITS.map((suit) => renderTrack(suit))}
           </div>
+          {!gameWon && (
+            <button
+              onClick={flipCard}
+              disabled={isFlipping || !gameInProgress}
+              className="w-full bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600
+                       text-white font-bold py-4 px-8 rounded-xl text-lg
+                       transition-all duration-300 shadow-2xl shadow-orange-500/50 hover:shadow-orange-500/70
+                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 hover:scale-105"
+            >
+              <Zap className="w-6 h-6" />
+              {isFlipping ? "Flipping..." : "Flip Card"}
+            </button>
+          )}
         </div>
-        {!gameWon && (
-          <button
-            onClick={flipCard}
-            disabled={isFlipping || !gameInProgress}
-            className="glass-button orange-gradient hover:opacity-90 border border-orange-400/80
-                     text-white font-bold py-2 px-4 rounded-xl text-sm
-                     transition-all duration-300 shadow-lg hover:shadow-orange-500/80 
-                     disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <Zap className="w-4 h-4" />
-            {isFlipping ? "Flipping..." : "Flip Card"}
-          </button>
-        )}
       </div>
     </>
   );

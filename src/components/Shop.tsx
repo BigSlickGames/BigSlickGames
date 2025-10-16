@@ -7,6 +7,7 @@ import {
   Crown,
   Gem,
   ArrowLeft,
+  ExternalLink,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import StripeWrapper from "./StripeWrapper";
@@ -130,6 +131,11 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string>("");
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
+  const [showCheckoutOptions, setShowCheckoutOptions] = useState(false);
+  const [checkoutItem, setCheckoutItem] = useState<ShopItem | null>(null);
+
+  // Your Stripe Payment Link (same for all packages for now)
+  const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/3cI5kC0TTbqQdvkecC8IU00";
 
   const updateChipsInDatabase = async (newChipAmount: number) => {
     try {
@@ -150,21 +156,32 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
     }
   };
 
-  const handlePurchaseClick = async (item: ShopItem) => {
+  const handleBuyNowClick = (item: ShopItem) => {
+    setCheckoutItem(item);
+    setShowCheckoutOptions(true);
+  };
+
+  const handleInAppCheckout = async () => {
+    if (!checkoutItem) return;
+
     setLoading(true);
+    setShowCheckoutOptions(false);
+
     try {
-      // Call your Vercel serverless function
-      const response = await fetch("/api/create-payment-intent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: item.price_real_money,
-          itemId: item.id,
-          userId: profile.id,
-        }),
-      });
+      const response = await fetch(
+        "http://localhost:3001/api/create-payment-intent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: checkoutItem.price_real_money,
+            itemId: checkoutItem.id,
+            userId: profile.id,
+          }),
+        }
+      );
 
       if (!response.ok) {
         throw new Error("Failed to create payment intent");
@@ -172,7 +189,7 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
 
       const data = await response.json();
       setClientSecret(data.clientSecret);
-      setSelectedItem(item);
+      setSelectedItem(checkoutItem);
     } catch (error) {
       console.error("Failed to initiate purchase:", error);
       setPurchaseSuccess("Failed to start payment. Please try again.");
@@ -180,6 +197,42 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleStripePageCheckout = () => {
+    if (!checkoutItem) return;
+
+    // Map each package to its specific Stripe payment link
+    const paymentLinks: { [key: string]: string } = {
+      "550e8400-e29b-41d4-a716-446655440001":
+        "https://buy.stripe.com/3cI5kC0TTbqQdvkecC8IU00", // 1000 chips - $0.99
+      "550e8400-e29b-41d4-a716-446655440002":
+        "https://buy.stripe.com/5kQcN4aut3Yo76WgkK8IU01", // 5000 chips - $4.99
+      "550e8400-e29b-41d4-a716-446655440003":
+        "https://buy.stripe.com/28E28q465fH6crg1pQ8IU02", // 12000 chips - $9.99
+      "550e8400-e29b-41d4-a716-446655440004":
+        "https://buy.stripe.com/9B6dR87ihamM76W6Ka8IU03", // 25000 chips - $19.99
+      "550e8400-e29b-41d4-a716-446655440005":
+        "https://buy.stripe.com/7sY9ASbyx7aA62Sd8y8IU04", // 75000 chips - $49.99
+      "550e8400-e29b-41d4-a716-446655440006":
+        "https://buy.stripe.com/00w14m5a9gLa0Iy0lM8IU05", // 200000 chips - $99.99
+    };
+
+    // Get the specific payment link for this package
+    const paymentUrl = paymentLinks[checkoutItem.id];
+
+    if (!paymentUrl) {
+      console.error("Payment link not found for item:", checkoutItem.id);
+      setPurchaseSuccess("Payment link not configured. Please try again.");
+      setTimeout(() => setPurchaseSuccess(null), 3000);
+      return;
+    }
+
+    // Add user tracking parameters to the Payment Link
+    const urlWithParams = `${paymentUrl}?client_reference_id=${profile.id}&prefilled_email=${encodeURIComponent(profile.email)}`;
+
+    // Redirect to Stripe-hosted checkout page
+    window.location.href = urlWithParams;
   };
 
   const handlePaymentSuccess = async () => {
@@ -195,11 +248,9 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
           `Successfully purchased ${selectedItem.chip_amount.toLocaleString()} chips!`
         );
 
-        // Close checkout modal first
         setClientSecret("");
         setSelectedItem(null);
 
-        // Scroll to success popup
         setTimeout(() => {
           const successPopup = document.getElementById("success-popup");
           if (successPopup) {
@@ -210,7 +261,6 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
           }
         }, 100);
 
-        // Keep success message for 4 seconds
         setTimeout(() => setPurchaseSuccess(null), 4000);
       }
     } catch (error) {
@@ -221,6 +271,11 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
   const handleCancelPayment = () => {
     setClientSecret("");
     setSelectedItem(null);
+  };
+
+  const closeCheckoutOptions = () => {
+    setShowCheckoutOptions(false);
+    setCheckoutItem(null);
   };
 
   return (
@@ -247,6 +302,67 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
         </p>
       </div>
 
+      {/* Checkout Options Modal */}
+      {showCheckoutOptions && checkoutItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-2xl">
+            <div className="text-center space-y-6">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2">
+                  Choose Checkout Method
+                </h3>
+                <p className="text-gray-400 text-sm">
+                  {checkoutItem.name} - $
+                  {checkoutItem.price_real_money.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {/* In-App Checkout Button */}
+                <button
+                  onClick={handleInAppCheckout}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 px-4 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <ShoppingCart className="w-5 h-5" />
+                      <span>Checkout In-App</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Stripe Page Checkout Button */}
+                <button
+                  onClick={handleStripePageCheckout}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 text-white py-3 px-4 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <ExternalLink className="w-5 h-5" />
+                  <span>Checkout on Stripe</span>
+                </button>
+
+                {/* Cancel Button */}
+                <button
+                  onClick={closeCheckoutOptions}
+                  disabled={loading}
+                  className="w-full bg-gray-700 text-gray-300 py-3 px-4 rounded-lg font-medium hover:bg-gray-600 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>✓ In-App: Stay on this page, faster checkout</p>
+                <p>✓ Stripe Page: Secure Stripe-hosted checkout</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Success Popup Modal */}
       {purchaseSuccess && !purchaseSuccess.includes("Failed") && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -255,7 +371,6 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
             className="bg-gray-800 border border-gray-700 rounded-2xl p-6 sm:p-8 w-full max-w-sm sm:max-w-md shadow-2xl animate-in zoom-in duration-300"
           >
             <div className="text-center space-y-4">
-              {/* Animated Check Mark */}
               <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-green-500 rounded-full flex items-center justify-center animate-in zoom-in duration-500">
                 <svg
                   className="w-10 h-10 sm:w-12 sm:h-12 text-white animate-in zoom-in duration-700"
@@ -274,7 +389,6 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                 </svg>
               </div>
 
-              {/* Success Text */}
               <div>
                 <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
                   Payment Successful!
@@ -284,7 +398,6 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                 </p>
               </div>
 
-              {/* Celebration Effect */}
               <div className="text-3xl sm:text-4xl animate-bounce">🎉</div>
             </div>
           </div>
@@ -390,22 +503,13 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
                 </div>
 
                 <button
-                  onClick={() => handlePurchaseClick(item)}
+                  onClick={() => handleBuyNowClick(item)}
                   disabled={loading}
                   className={`w-full bg-gradient-to-r ${colorClass} text-white py-2 rounded-md font-medium hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 flex items-center justify-center space-x-2`}
                   aria-label={`Purchase ${item.name}`}
                 >
-                  {loading ? (
-                    <div
-                      className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"
-                      aria-hidden="true"
-                    ></div>
-                  ) : (
-                    <>
-                      <ShoppingCart className="w-4 h-4" />
-                      <span>Buy Now</span>
-                    </>
-                  )}
+                  <ShoppingCart className="w-4 h-4" />
+                  <span>Buy Now</span>
                 </button>
               </div>
             </div>
@@ -413,7 +517,7 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
         })}
       </div>
 
-      {/* Stripe Checkout Modal */}
+      {/* Stripe Checkout Modal (In-App) */}
       {clientSecret && selectedItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <StripeWrapper clientSecret={clientSecret}>

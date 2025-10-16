@@ -26,6 +26,7 @@ export default function CheckoutForm({
   const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   // Scroll to the checkout form when it mounts
   React.useEffect(() => {
@@ -38,13 +39,32 @@ export default function CheckoutForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!stripe || !elements) return;
+    if (!stripe || !elements) {
+      setError("Stripe has not loaded yet. Please wait.");
+      return;
+    }
+
+    // Check if PaymentElement is ready
+    if (!isReady) {
+      setError("Payment form is still loading. Please wait.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const { error: submitError } = await stripe.confirmPayment({
+      // Submit the form to collect payment details
+      const { error: submitError } = await elements.submit();
+
+      if (submitError) {
+        setError(submitError.message || "Failed to submit payment details");
+        setLoading(false);
+        return;
+      }
+
+      // Confirm the payment
+      const { error: confirmError } = await stripe.confirmPayment({
         elements,
         confirmParams: {
           return_url: window.location.origin + "/shop",
@@ -52,8 +72,8 @@ export default function CheckoutForm({
         redirect: "if_required",
       });
 
-      if (submitError) {
-        setError(submitError.message || "Payment failed");
+      if (confirmError) {
+        setError(confirmError.message || "Payment failed");
       } else {
         onSuccess();
       }
@@ -95,7 +115,22 @@ export default function CheckoutForm({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <PaymentElement />
+          <PaymentElement
+            onReady={() => setIsReady(true)}
+            onLoadError={(error) => {
+              console.error("PaymentElement load error:", error);
+              setError("Failed to load payment form. Please try again.");
+            }}
+          />
+
+          {!isReady && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-6 h-6 animate-spin text-orange-400" />
+              <span className="ml-2 text-gray-400">
+                Loading payment form...
+              </span>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-300 text-sm">
@@ -114,7 +149,7 @@ export default function CheckoutForm({
             </button>
             <button
               type="submit"
-              disabled={!stripe || loading}
+              disabled={!stripe || !isReady || loading}
               className="flex-1 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading ? (
