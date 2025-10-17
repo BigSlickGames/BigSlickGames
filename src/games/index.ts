@@ -27,4 +27,13 @@ export const GAMES: Record<string, Game> = {
     minBet: 1,
     maxBet: 1000,
   },
+  "stack-em": {
+    id: "stack-em",
+    name: "21-stackem",
+    description: "Watch the multiplier soar! Cash out before the crash!",
+    icon: "/games/space-crash/images/icon.png",
+    component: lazy(() => import("./stack-em/App")),
+    minBet: 1,
+    maxBet: 1000,
+  },
 };

@@ -8,7 +8,6 @@ import GamesGrid from "./GamesGrid";
 import ProfileCard from "./ProfileCard";
 import FriendsPanel from "./FriendsPanel";
 import DailyBonusModal from "./DailyBonusModal";
-import MiniGames from "./UpcomingGames";
 import ScrollingAds from "./ScrollingAds";
 import Missions from "./Missions";
 import IntegratedChat from "./IntegratedChat";
@@ -67,7 +66,6 @@ export default function Dashboard({
     profile: false,
     friends: false,
     chat: false,
-    upcoming: false,
     ads: false,
     shop: false,
     contacts: true, // Start collapsed on mobile to save space
@@ -176,6 +174,12 @@ export default function Dashboard({
     if (gameId === "space-crash") {
       // Navigate to internal game route
       window.location.href = "/play/space-crash";
+      return;
+    }
+
+    if (gameId === "stack-em") {
+      // Navigate to internal game route
+      window.location.href = "/play/stack-em";
       return;
     }
     const gameUrls = {
@@ -588,12 +592,12 @@ export default function Dashboard({
               }`}
             >
               <CollapsibleSection
-                id="minigames"
-                title="Mini Games"
-                isCollapsed={collapsedSections.minigames}
-                onToggle={() => toggleSection("minigames")}
+                id="shop"
+                title="Chip Shop"
+                isCollapsed={collapsedSections.shop}
+                onToggle={() => toggleSection("shop")}
               >
-                <MiniGames />
+                <ShopSidebar profile={profile} onPurchase={handlePurchase} />
               </CollapsibleSection>
             </div>
           </div>
