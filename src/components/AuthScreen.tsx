@@ -304,10 +304,8 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setResetMessage("");
 
     try {
-      const redirectTo = `${window.location.origin}/reset-password`;
-
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo,
+        redirectTo: "https://bigslickgames.com/reset-password",
       });
 
       if (error) throw error;
@@ -1054,8 +1052,8 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                         passwordStrength.level === "Weak"
                           ? "33%"
                           : passwordStrength.level === "Medium"
-                          ? "66%"
-                          : "100%",
+                            ? "66%"
+                            : "100%",
                     }}
                   ></div>
                   <p
