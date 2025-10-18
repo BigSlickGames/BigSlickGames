@@ -22,6 +22,11 @@ function App() {
     // In App.tsx, replace the checkSession function:
     const checkSession = async () => {
       try {
+        if (!supabase) {
+          setLoading(false);
+          return;
+        }
+
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -147,6 +152,10 @@ function App() {
     };
 
     checkSession();
+
+    if (!supabase) {
+      return;
+    }
 
     // Listen for auth changes
     const {
