@@ -1,7 +1,8 @@
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 interface StripeWrapperProps {
   children: React.ReactNode;
@@ -21,6 +22,10 @@ export default function StripeWrapper({
       },
     },
   };
+
+  if (!stripePromise) {
+    return <>{children}</>;
+  }
 
   return (
     <Elements stripe={stripePromise} options={options}>

@@ -4,11 +4,10 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.su
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
 
 // Only create Supabase client if valid credentials are provided
-const hasValidCredentials = supabaseUrl !== 'https://placeholder.supabase.co' && 
-                           supabaseAnonKey !== 'placeholder-key' &&
-                           supabaseUrl.includes('.supabase.co');
+const hasValidCredentials = supabaseUrl !== 'https://placeholder.supabase.co' &&
+                           supabaseAnonKey !== 'placeholder-key';
 
-export const supabase = hasValidCredentials 
+export const supabase = hasValidCredentials
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
