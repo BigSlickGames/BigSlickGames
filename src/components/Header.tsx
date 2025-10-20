@@ -8,6 +8,7 @@ import {
   X,
   LogOut,
   ChevronDown,
+  ShoppingCart,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -89,14 +90,19 @@ export default function Header({
               </span>
             </div>
 
-            {/* Shop Button */}
+            {/* PROMINENT CHIP SHOP BUTTON - Mobile */}
             {onShopClick && (
               <button
                 onClick={onShopClick}
-                className="p-2.5 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 rounded-xl transition-all active:scale-95 border border-transparent hover:border-orange-500/30"
-                aria-label="Shop"
+                className="relative bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all duration-200 active:scale-95 shadow-lg shadow-orange-500/30 border border-orange-400/50"
               >
-                <ShoppingBag className="w-5 h-5" />
+                <ShoppingCart className="w-4 h-4" />
+                <span className="text-xs">Shop</span>
+                {/* Pulse indicator */}
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                </span>
               </button>
             )}
 
@@ -144,6 +150,25 @@ export default function Header({
 
           {/* Right Section */}
           <div className="flex items-center space-x-4">
+            {/* PROMINENT CHIP SHOP BUTTON - Desktop */}
+            {onShopClick && (
+              <button
+                onClick={onShopClick}
+                className="relative bg-gradient-to-r from-orange-500 via-orange-600 to-red-500 hover:from-orange-600 hover:via-red-500 hover:to-red-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2.5 transition-all duration-200 hover:scale-105 shadow-xl shadow-orange-500/30 border-2 border-orange-400/50 group"
+              >
+                <ShoppingCart className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                <span className="text-base">Chip Shop</span>
+                {/* <div className="bg-white/20 px-2.5 py-1 rounded-lg text-sm font-bold border border-white/30">
+                  {formatChips(chips)}
+                </div> */}
+                {/* Pulse indicator */}
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-yellow-500 border-2 border-white"></span>
+                </span>
+              </button>
+            )}
+
             {/* Chips Display */}
             <div className="flex items-center space-x-2.5 bg-gradient-to-r from-yellow-500/10 via-orange-500/10 to-red-500/10 px-5 py-3 rounded-xl border border-yellow-500/20 shadow-lg">
               <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
@@ -178,16 +203,6 @@ export default function Header({
 
             {/* Action Buttons */}
             <div className="flex items-center space-x-2">
-              {onShopClick && (
-                <button
-                  onClick={onShopClick}
-                  className="p-3 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 rounded-xl transition-all border border-transparent hover:border-orange-500/30"
-                  title="Shop"
-                >
-                  <ShoppingBag className="w-5 h-5" />
-                </button>
-              )}
-
               <button
                 onClick={onSettingsClick}
                 className="p-3 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-all"
