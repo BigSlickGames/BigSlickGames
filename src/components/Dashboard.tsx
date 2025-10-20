@@ -3,7 +3,6 @@ import { ChevronDown, ChevronRight, MessageCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import Header from "./Header";
 import Footer from "./Footer";
-
 import GamesGrid from "./GamesGrid";
 import ProfileCard from "./ProfileCard";
 import FriendsPanel from "./FriendsPanel";
@@ -12,13 +11,13 @@ import ScrollingAds from "./ScrollingAds";
 import Missions from "./Missions";
 import IntegratedChat from "./IntegratedChat";
 import Shop from "./Shop";
-import ShopSidebar from "./ShopSidebar";
 import ProfileSettings from "./ProfileSettings";
 import Forum from "./Forum";
 import PrivacyPolicy from "./PrivacyPolicy";
 import TermsOfUse from "./TermsOfService";
 import CommunityRules from "./CommunityRules";
 import Leaderboard from "./Leaderboard";
+import DailyRewardsPanel from "./DailyRewardsPanel"; // Changed from DailyBonusModal
 
 interface User {
   id: string;
@@ -57,18 +56,30 @@ export default function Dashboard({
     | "terms"
     | "rules"
   >("dashboard");
-  const [showDailyBonus, setShowDailyBonus] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState<
-    Record<string, boolean>
-  >({
+  const [collapsedSections, setCollapsedSections] = useState<{
+    games: boolean;
+    profile: boolean;
+    friends: boolean;
+    chat: boolean;
+    ads: boolean;
+    dailyRewards: boolean;
+    contacts: boolean;
+  }>({
     games: false,
     profile: false,
     friends: false,
     chat: false,
     ads: false,
-    shop: false,
-    contacts: true, // Start collapsed on mobile to save space
+    dailyRewards: false,
+    contacts: true,
+  });
+
+  // Add streak state
+  const [streakData, setStreakData] = useState({
+    currentStreak: 0,
+    longestStreak: 0,
+    lastClaimDate: null as string | null,
   });
 
   // Animation states
@@ -103,16 +114,13 @@ export default function Dashboard({
         }, delay);
       });
 
-      // Banner shake effect after it appears
       setTimeout(() => {
         setShowElements((prev) => ({ ...prev, bannerShake: true }));
-        // Remove shake after animation
         setTimeout(() => {
           setShowElements((prev) => ({ ...prev, bannerShake: false }));
         }, 600);
       }, 1050);
     } else {
-      // Reset animations when switching views
       setShowElements({
         header: true,
         banner: true,
@@ -126,10 +134,15 @@ export default function Dashboard({
     }
   }, [activeView]);
 
-  // Update profile when initialProfile changes (from parent sync)
+  // Update profile when initialProfile changes
   useEffect(() => {
     setProfile(initialProfile);
   }, [initialProfile]);
+
+  // Load streak data on mount
+  useEffect(() => {
+    loadStreakData();
+  }, [user.id]);
 
   const toggleSection = (sectionId: string) => {
     setCollapsedSections((prev) => ({
@@ -138,47 +151,161 @@ export default function Dashboard({
     }));
   };
 
-  const checkDailyBonus = (profile: UserProfile) => {
-    const lastLogin = new Date(profile.last_login);
-    const today = new Date();
-    const diffTime = Math.abs(today.getTime() - lastLogin.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const loadStreakData = async () => {
+    if (!user.id) return;
 
-    if (diffDays >= 1) {
-      setShowDailyBonus(true);
+    try {
+      // ✅ FIX: Use .maybeSingle() and get first row
+      const { data: streak, error } = await supabase
+        .from("user_streaks")
+        .select("current_streak, longest_streak, last_claim_date")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error && error.code !== "PGRST116") {
+        console.error("Error loading streak data:", error);
+        return;
+      }
+
+      if (streak) {
+        setStreakData({
+          currentStreak: streak.current_streak || 0,
+          longestStreak: streak.longest_streak || 0,
+          lastClaimDate: streak.last_claim_date,
+        });
+      } else {
+        // First time user - create streak record
+        const { error: insertError } = await supabase
+          .from("user_streaks")
+          .insert({
+            user_id: user.id,
+            current_streak: 0,
+            longest_streak: 0,
+            last_claim_date: null,
+            total_claims: 0,
+          });
+
+        if (insertError) {
+          console.error("Error creating streak record:", insertError);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Error in loadStreakData:", error);
     }
   };
 
-  const claimDailyBonus = async () => {
+  const handleClaimBonus = async (day: number, reward: number) => {
+    if (!user.id) return;
+
     try {
-      const newChipAmount = profile.chips + 1000;
+      const today = new Date().toISOString().split("T")[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+      let newStreak = 1;
+
+      if (streakData.lastClaimDate) {
+        const lastClaimDate = new Date(streakData.lastClaimDate)
+          .toISOString()
+          .split("T")[0];
+
+        if (lastClaimDate === yesterdayStr) {
+          newStreak = streakData.currentStreak + 1;
+        } else if (lastClaimDate === today) {
+          console.log("Already claimed today");
+          return;
+        }
+      }
+
+      const newLongestStreak = Math.max(newStreak, streakData.longestStreak);
+
+      // ✅ FIX: Use .maybeSingle() and get first row only
+      const { data: streak, error: fetchError } = await supabase
+        .from("user_streaks")
+        .select("total_claims")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }) // Get most recent
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error("Error fetching streak:", fetchError);
+        return;
+      }
+
+      const newTotalClaims = (streak?.total_claims || 0) + 1;
+
+      // ✅ Update ALL records for this user (to fix duplicates)
+      const { error: updateError } = await supabase
+        .from("user_streaks")
+        .update({
+          current_streak: newStreak,
+          longest_streak: newLongestStreak,
+          last_claim_date: today,
+          total_claims: newTotalClaims,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id);
+
+      if (updateError) {
+        console.error("Error updating streak:", updateError);
+        return;
+      }
+
+      // Update chips
+      const newChipAmount = profile.chips + reward;
+      const { error: chipsError } = await supabase
+        .from("user_wallet")
+        .update({
+          chips: newChipAmount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id);
+
+      if (chipsError) {
+        console.error("Error updating chips:", chipsError);
+        return;
+      }
+
+      // Update local state
       setProfile((prev) => ({ ...prev, chips: newChipAmount }));
+      setStreakData({
+        currentStreak: newStreak,
+        longestStreak: newLongestStreak,
+        lastClaimDate: today,
+      });
+
+      console.log("✅ Claimed successfully:", {
+        day,
+        reward,
+        newStreak,
+        newChipAmount,
+      });
     } catch (error) {
       console.error("Error claiming daily bonus:", error);
     }
-    setShowDailyBonus(false);
   };
 
   const handlePurchase = (newChipBalance: number) => {
-    // Update profile chips locally
     setProfile((prev) => ({ ...prev, chips: newChipBalance }));
   };
 
   const handleGameClick = (gameId: string) => {
     if (gameId === "racing-suits") {
-      // Navigate to internal game route
       window.location.href = "/play/racing-suits";
       return;
     }
 
     if (gameId === "space-crash") {
-      // Navigate to internal game route
       window.location.href = "/play/space-crash";
       return;
     }
 
     if (gameId === "stack-em") {
-      // Navigate to internal game route
       window.location.href = "/play/stack-em";
       return;
     }
@@ -197,7 +324,6 @@ export default function Dashboard({
       return;
     }
 
-    // Generate cross-app authentication token
     const authToken = {
       email: profile.email,
       username: profile.username,
@@ -209,10 +335,7 @@ export default function Dashboard({
       timestamp: Date.now(),
     };
 
-    // Encode the token
     const encodedToken = btoa(JSON.stringify(authToken));
-
-    // Create URL with authentication token
     const authenticatedUrl = `${gameUrl}?authToken=${encodedToken}`;
 
     console.log("🚀 Opening game with authentication:", {
@@ -221,7 +344,6 @@ export default function Dashboard({
       url: authenticatedUrl,
     });
 
-    // Open game in new tab with authentication
     window.open(authenticatedUrl, "_blank");
   };
 
@@ -235,9 +357,7 @@ export default function Dashboard({
 
   return (
     <div className="min-h-screen min-w-full relative bg-gradient-to-br from-gray-900 via-gray-800 to-black flex flex-col">
-      {/* Pinstripe and gradient background overlay */}
       <div className="absolute inset-0 opacity-30">
-        {/* Diagonal pinstripes */}
         <div
           className="absolute inset-0"
           style={{
@@ -264,7 +384,6 @@ export default function Dashboard({
           }}
         ></div>
 
-        {/* Vertical gradient stripes */}
         <div
           className="absolute inset-0"
           style={{
@@ -284,11 +403,9 @@ export default function Dashboard({
           }}
         ></div>
 
-        {/* Radial gradient overlay */}
         <div className="absolute inset-0 bg-gradient-radial from-orange-500/5 via-transparent to-gray-900/20"></div>
       </div>
 
-      {/* Animated Header */}
       <div
         className={`transform transition-all duration-300 ease-out ${
           showElements.header
@@ -303,11 +420,10 @@ export default function Dashboard({
           onSettingsClick={() => setActiveView("settings")}
           onForumClick={() => setActiveView("forum")}
           onLeaderboardClick={() => setActiveView("leaderboard")}
-          onHomeClick={() => setActiveView("dashboard")} // ✅ Add this line
+          onHomeClick={() => setActiveView("dashboard")}
         />
       </div>
 
-      {/* Mobile Banner - Only visible on mobile, after header */}
       {activeView === "dashboard" && (
         <div
           className={`block lg:hidden transform transition-all duration-300 ease-out ${
@@ -331,40 +447,6 @@ export default function Dashboard({
       )}
 
       <main className="relative z-10 container mx-auto px-4 py-8 pb-32 flex-1">
-        {/* Animated Legal Links */}
-        {/* <div
-          className={`mb-6 text-center transform transition-all duration-200 ease-out ${
-            showElements.legalLinks
-              ? "translate-y-0 opacity-100 scale-100"
-              : "translate-y-4 opacity-0 scale-98"
-          }`}
-        >
-          <div className="flex flex-wrap justify-center items-center space-x-4 text-sm">
-            <button
-              onClick={() => setActiveView("privacy")}
-              className="text-gray-400 hover:text-blue-400 transition-colors underline"
-            >
-              Privacy Policy
-            </button>
-            <span className="text-gray-600">•</span>
-            <button
-              onClick={() => setActiveView("terms")}
-              className="text-gray-400 hover:text-purple-400 transition-colors underline"
-            >
-              Terms of Use
-            </button>
-            <span className="text-gray-600">•</span>
-            <button
-              onClick={() => setActiveView("rules")}
-              className="text-gray-400 hover:text-green-400 transition-colors underline"
-            >
-              Community Rules
-            </button>
-          </div>
-        </div> */}
-
-        {/* Animated Scrolling Advertisement Banner */}
-        {/* Only show ads on dashboard view */}
         {activeView === "dashboard" && (
           <div
             className={`transform transition-all duration-300 ease-out ${
@@ -386,7 +468,6 @@ export default function Dashboard({
 
         {activeView === "dashboard" ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-8 min-h-screen">
-            {/* Animated Left Sidebar */}
             <div
               className={`hidden lg:block lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.leftSidebar
@@ -415,7 +496,6 @@ export default function Dashboard({
                     </p>
                   </div>
 
-                  {/* XP Level Status */}
                   <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-gray-400 text-sm">Level</span>
@@ -443,7 +523,6 @@ export default function Dashboard({
                     </p>
                   </div>
 
-                  {/* Current Bankroll */}
                   <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50 text-center">
                     <div className="flex items-center justify-center space-x-2 mb-1">
                       <span className="text-gray-400 text-sm">
@@ -457,30 +536,8 @@ export default function Dashboard({
                       <span className="text-yellow-400 text-sm">chips</span>
                     </div>
                   </div>
-
-                  <div className="text-center">
-                    {false && (
-                      <button
-                        onClick={() => setActiveView("missions")}
-                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transition-all text-sm shadow-lg shadow-purple-500/30 touch-manipulation"
-                      >
-                        View All Missions
-                      </button>
-                    )}
-                  </div>
                 </div>
               </CollapsibleSection>
-
-              {false && (
-                <CollapsibleSection
-                  id="friends"
-                  title="Friends"
-                  isCollapsed={collapsedSections.friends}
-                  onToggle={() => toggleSection("friends")}
-                >
-                  <FriendsPanel userId={user.id} />
-                </CollapsibleSection>
-              )}
 
               <CollapsibleSection
                 id="contacts"
@@ -489,7 +546,6 @@ export default function Dashboard({
                 onToggle={() => toggleSection("contacts")}
               >
                 <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 backdrop-blur-xl border border-orange-500/20 rounded-2xl shadow-xl shadow-orange-500/10 overflow-visible">
-                  {/* Modern Glass Header */}
                   <div className="relative h-16 bg-gradient-to-r from-gray-800/60 via-gray-700/40 to-gray-800/60 backdrop-blur-xl border-b border-white/10 rounded-t-2xl overflow-visible">
                     <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-white/10 to-white/5"></div>
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -552,20 +608,8 @@ export default function Dashboard({
                   </div>
                 </div>
               </CollapsibleSection>
-
-              {false && (
-                <CollapsibleSection
-                  id="chat"
-                  title="Chat"
-                  isCollapsed={collapsedSections.chat}
-                  onToggle={() => toggleSection("chat")}
-                >
-                  <IntegratedChat userId={user.id} />
-                </CollapsibleSection>
-              )}
             </div>
 
-            {/* Animated Games Grid */}
             <div
               className={`lg:col-span-2 transform transition-all duration-500 ease-out ${
                 showElements.gamesGrid
@@ -583,8 +627,7 @@ export default function Dashboard({
               </CollapsibleSection>
             </div>
 
-            {/* Animated Right Sidebar */}
-            {/* <div
+            <div
               className={`lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.rightSidebar
                   ? "translate-x-0 opacity-100"
@@ -592,14 +635,27 @@ export default function Dashboard({
               }`}
             >
               <CollapsibleSection
-                id="shop"
-                title="Chip Shop"
-                isCollapsed={collapsedSections.shop}
-                onToggle={() => toggleSection("shop")}
+                id="dailyRewards"
+                title="Daily Login Rewards"
+                isCollapsed={collapsedSections.dailyRewards}
+                onToggle={() => toggleSection("dailyRewards")}
               >
-                <ShopSidebar profile={profile} onPurchase={handlePurchase} />
+                <DailyRewardsPanel
+                  onClaim={handleClaimBonus}
+                  currentStreak={streakData.currentStreak}
+                  longestStreak={streakData.longestStreak}
+                  lastClaimDate={streakData.lastClaimDate}
+                />
               </CollapsibleSection>
-            </div> */}
+            </div>
+
+            <div
+              className={`lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
+                showElements.rightSidebar
+                  ? "translate-x-0 opacity-100"
+                  : "translate-x-16 opacity-0"
+              }`}
+            ></div>
           </div>
         ) : activeView === "missions" ? (
           <div className="animate-fadeIn">
@@ -616,15 +672,6 @@ export default function Dashboard({
               onProfileUpdate={setProfile}
             />
           </div>
-        ) : activeView === "forum" ? (
-          false ? (
-            <div className="animate-fadeIn">
-              <Forum
-                profile={profile}
-                onBack={() => setActiveView("dashboard")}
-              />
-            </div>
-          ) : null
         ) : activeView === "privacy" ? (
           <div className="animate-fadeIn">
             <PrivacyPolicy onBack={() => setActiveView("dashboard")} />
@@ -655,11 +702,6 @@ export default function Dashboard({
         )}
       </main>
       <Footer onSetActiveView={setActiveView} />
-      <DailyBonusModal
-        isOpen={showDailyBonus}
-        onClaim={claimDailyBonus}
-        onClose={() => setShowDailyBonus(false)}
-      />
     </div>
   );
 }
