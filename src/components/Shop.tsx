@@ -239,12 +239,13 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
     if (!selectedItem) return;
 
     try {
+      // 1. PRIORITY: Give user their chips first (most important!)
       const newChipAmount = profile.chips + selectedItem.chip_amount;
       const success = await updateChipsInDatabase(newChipAmount);
 
       if (success) {
-        // ✅ Log transaction AFTER chip update succeeds
-        await supabase.from("transactions").insert({
+        // 2. Try to log transaction (nice to have, but not critical)
+        const { error: txError } = await supabase.from("transactions").insert({
           user_id: profile.id,
           item_id: selectedItem.id,
           item_name: selectedItem.name,
@@ -254,6 +255,12 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
           status: "completed",
         });
 
+        if (txError) {
+          console.error("Failed to log transaction:", txError);
+          // Don't block success flow - user already got their chips
+        }
+
+        // 3. Show success to user
         onPurchase(newChipAmount);
         setPurchaseSuccess(
           `Successfully purchased ${selectedItem.chip_amount.toLocaleString()} chips!`
