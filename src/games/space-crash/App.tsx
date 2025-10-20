@@ -61,6 +61,7 @@ function App() {
   const hasCashedOutRef = useRef<boolean>(false);
   const autoCashOutRef = useRef<number>(2.0);
   const autoCashOutEnabledRef = useRef<boolean>(false);
+  const chipBalanceRef = useRef<number>(chipBalance);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -79,6 +80,9 @@ function App() {
     autoCashOutEnabledRef.current = autoCashOutEnabled;
   }, [autoCashOutEnabled]);
 
+  useEffect(() => {
+    chipBalanceRef.current = chipBalance;
+  }, [chipBalance]);
   // Helper function to safely convert to fixed decimal
   const safeToFixed = (value: any, decimals: number = 2): string => {
     const num = typeof value === "number" ? value : parseFloat(value);
@@ -333,7 +337,12 @@ function App() {
       newMultiplier >= autoCashOutRef.current
     ) {
       // Use the exact auto cash-out value
-      handleCashOut(autoCashOutRef.current);
+      const targetMultiplier = Math.min(
+        autoCashOutRef.current,
+        crashPointRef.current
+      );
+
+      handleCashOut(targetMultiplier);
       return;
     }
 
@@ -401,8 +410,7 @@ function App() {
 
     // Calculate winnings
     const winAmount = Math.floor(betAmount * finalMultiplier);
-    const profit = winAmount - betAmount;
-    const newBalance = chipBalance + winAmount;
+    const newBalance = chipBalanceRef.current + winAmount;
 
     // Update balance
     setChipBalance(newBalance);
@@ -418,9 +426,9 @@ function App() {
           : bet
       )
     );
-
-    // Award XP equal to chips won (profit only)
+    const profit = winAmount - betAmount;
     updateGameStats(true, profit);
+    // Award XP equal to chips won (profit only)
   };
 
   // Start animation when game starts
@@ -1069,7 +1077,7 @@ function App() {
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-blue-400">XP Earned:</span>
                         <span className="text-blue-400 font-bold">
-                          +{winnings - betAmount} XP
+                          +{Math.max(0, winnings - betAmount)} XP
                         </span>
                       </div>
                     </>
@@ -1084,9 +1092,9 @@ function App() {
                             : "text-red-400"
                         }`}
                       >
-                        {gameResult === "win" ? "+" : "-"}
+                        {Math.max(0, winnings - betAmount) > 0 ? "+" : "-"}
                         {gameResult === "win"
-                          ? winnings - betAmount
+                          ? Math.abs(winnings - betAmount)
                           : betAmount}{" "}
                         chips
                       </span>

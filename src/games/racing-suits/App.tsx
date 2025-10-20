@@ -98,6 +98,8 @@ function App() {
   });
   const [liveBets, setLiveBets] = useState<LiveBet[]>([]);
   const [liveBetAmount, setLiveBetAmount] = useState(5);
+  const [showBetLimitNotification, setShowBetLimitNotification] =
+    useState(false);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
