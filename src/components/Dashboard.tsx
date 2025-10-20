@@ -584,7 +584,7 @@ export default function Dashboard({
             </div>
 
             {/* Animated Right Sidebar */}
-            <div
+            {/* <div
               className={`lg:col-span-1 space-y-6 transform transition-all duration-400 ease-out ${
                 showElements.rightSidebar
                   ? "translate-x-0 opacity-100"
@@ -599,7 +599,7 @@ export default function Dashboard({
               >
                 <ShopSidebar profile={profile} onPurchase={handlePurchase} />
               </CollapsibleSection>
-            </div>
+            </div> */}
           </div>
         ) : activeView === "missions" ? (
           <div className="animate-fadeIn">

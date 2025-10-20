@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { ShoppingBag, Coins, Star, Zap, Crown, Gem, ArrowRight } from 'lucide-react';
+import React, { useState } from "react";
+import {
+  ShoppingBag,
+  Coins,
+  Star,
+  Zap,
+  Crown,
+  Gem,
+  ArrowRight,
+} from "lucide-react";
 
 interface UserProfile {
   id: string;
@@ -29,33 +37,33 @@ interface ShopSidebarProps {
 
 const featuredPackages: ShopItem[] = [
   {
-    id: '550e8400-e29b-41d4-a716-446655440001',
-    name: 'Starter Pack',
-    description: 'Perfect for beginners',
+    id: "550e8400-e29b-41d4-a716-446655440001",
+    name: "Starter Pack",
+    description: "Perfect for beginners",
     price_real_money: 0.99,
     chip_amount: 1000,
   },
   {
-    id: '550e8400-e29b-41d4-a716-446655440002',
-    name: 'Value Pack',
-    description: 'Most popular choice',
+    id: "550e8400-e29b-41d4-a716-446655440002",
+    name: "Value Pack",
+    description: "Most popular choice",
     price_real_money: 4.99,
     chip_amount: 5000,
     popular: true,
     bonus_percentage: 10,
   },
   {
-    id: '550e8400-e29b-41d4-a716-446655440003',
-    name: 'Premium Pack',
-    description: 'Great value for serious players',
+    id: "550e8400-e29b-41d4-a716-446655440003",
+    name: "Premium Pack",
+    description: "Great value for serious players",
     price_real_money: 9.99,
     chip_amount: 12000,
     bonus_percentage: 20,
   },
   {
-    id: '550e8400-e29b-41d4-a716-446655440005',
-    name: 'Ultimate Pack',
-    description: 'The ultimate gaming experience',
+    id: "550e8400-e29b-41d4-a716-446655440005",
+    name: "Ultimate Pack",
+    description: "The ultimate gaming experience",
     price_real_money: 49.99,
     chip_amount: 75000,
     bonus_percentage: 50,
@@ -63,17 +71,17 @@ const featuredPackages: ShopItem[] = [
 ];
 
 const getPackageIcon = (packageName: string) => {
-  if (packageName.includes('Value')) return Star;
-  if (packageName.includes('Premium')) return Zap;
-  if (packageName.includes('Ultimate')) return Gem;
+  if (packageName.includes("Value")) return Star;
+  if (packageName.includes("Premium")) return Zap;
+  if (packageName.includes("Ultimate")) return Gem;
   return Coins;
 };
 
 const getPackageColor = (packageName: string) => {
-  if (packageName.includes('Value')) return 'from-blue-500 to-blue-600';
-  if (packageName.includes('Premium')) return 'from-purple-500 to-purple-600';
-  if (packageName.includes('Ultimate')) return 'from-yellow-500 to-orange-500';
-  return 'from-gray-500 to-gray-600';
+  if (packageName.includes("Value")) return "from-blue-500 to-blue-600";
+  if (packageName.includes("Premium")) return "from-purple-500 to-purple-600";
+  if (packageName.includes("Ultimate")) return "from-yellow-500 to-orange-500";
+  return "from-gray-500 to-gray-600";
 };
 
 export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
@@ -82,16 +90,16 @@ export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
 
   const handlePurchase = async (item: ShopItem) => {
     setLoading(true);
-    
+
     try {
       // Update chips locally
       const newChipAmount = profile.chips + item.chip_amount;
-      
+
       setPurchaseSuccess(item.name);
-      
+
       setTimeout(() => setPurchaseSuccess(null), 3000);
     } catch (error) {
-      console.error('Purchase failed:', error);
+      console.error("Purchase failed:", error);
     } finally {
       setLoading(false);
     }
@@ -123,20 +131,21 @@ export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
         )}
 
         <div className="text-center mb-4">
-          <p className="text-gray-400 text-sm">Get free chips to power up your gaming!</p>
-          <p className="text-orange-400 text-xs mt-1">(Payment integration coming soon)</p>
+          <p className="text-gray-400 text-sm">
+            Get free chips to power up your gaming!
+          </p>
         </div>
 
         <div className="space-y-3">
           {featuredPackages.map((item) => {
             const IconComponent = getPackageIcon(item.name);
             const colorClass = getPackageColor(item.name);
-            
+
             return (
               <div
                 key={item.id}
                 className={`relative bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-orange-500/20 rounded-xl p-4 hover:border-orange-500/40 transition-all duration-300 hover:scale-[1.02] ${
-                  item.popular ? 'ring-1 ring-orange-500/30' : ''
+                  item.popular ? "ring-1 ring-orange-500/30" : ""
                 }`}
               >
                 {item.popular && (
@@ -156,13 +165,19 @@ export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
                 )}
 
                 <div className="text-center space-y-3">
-                  <div className={`mx-auto w-10 h-10 bg-gradient-to-r ${colorClass} rounded-lg flex items-center justify-center`}>
+                  <div
+                    className={`mx-auto w-10 h-10 bg-gradient-to-r ${colorClass} rounded-lg flex items-center justify-center`}
+                  >
                     <IconComponent className="w-5 h-5 text-white" />
                   </div>
 
                   <div>
-                    <h4 className="text-white font-bold text-sm mb-1">{item.name}</h4>
-                    <p className="text-gray-400 text-xs mb-2">{item.description}</p>
+                    <h4 className="text-white font-bold text-sm mb-1">
+                      {item.name}
+                    </h4>
+                    <p className="text-gray-400 text-xs mb-2">
+                      {item.description}
+                    </p>
                   </div>
 
                   <div className="space-y-1">
@@ -172,7 +187,7 @@ export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
                         {item.chip_amount.toLocaleString()}
                       </span>
                     </div>
-                    
+
                     <div className="text-xl font-bold text-white">
                       ${item.price_real_money}
                     </div>
@@ -200,7 +215,9 @@ export default function ShopSidebar({ profile, onPurchase }: ShopSidebarProps) {
 
         <div className="border-t border-orange-500/20 pt-4">
           <button
-            onClick={() => {/* Navigate to full shop */}}
+            onClick={() => {
+              /* Navigate to full shop */
+            }}
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all flex items-center justify-center space-x-2"
           >
             <ShoppingBag className="w-4 h-4" />

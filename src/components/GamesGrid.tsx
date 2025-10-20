@@ -78,7 +78,7 @@ const games = [
     glowColor: "shadow-gray-800/40",
     hoverColor: "hover:from-gray-700 hover:to-gray-900",
     description: "Blast off before the crash",
-    minBet: "Full Bankroll",
+    minBet: 100,
     icon: Rocket,
     accent: "black",
     bannerImage: spaceCrashBanner,

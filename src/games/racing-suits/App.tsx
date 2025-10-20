@@ -541,7 +541,7 @@ function App() {
                         2 *
                         Math.PI *
                         45 *
-                        (1 - (playerExperience % 1000) / 1000)
+                        (1 - playerExperience / (playerLevel * 1000))
                       }`}
                       strokeLinecap="round"
                       className="transition-all duration-500"
@@ -577,7 +577,8 @@ function App() {
                     </span>
                     <span className="text-white/50 text-xs">•</span>
                     <span className="text-white/70 text-xs">
-                      {playerExperience % 1000} XP
+                      {playerExperience.toLocaleString()}/
+                      {(playerLevel * 1000).toLocaleString()}
                     </span>
                   </div>
                 </div>

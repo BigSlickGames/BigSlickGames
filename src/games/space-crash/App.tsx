@@ -184,22 +184,22 @@ function App() {
         let newLevel = currentWallet.level || 1;
 
         if (won && xpGained > 0) {
-          newExperience += xpGained;
+          let currentXP = newExperience + xpGained;
+          let currentLevel = newLevel;
 
-          // Check for level up (every 1000 XP)
-          const oldLevelThreshold = Math.floor(
-            (currentWallet.experience || 0) / 1000
-          );
-          const newLevelThreshold = Math.floor(newExperience / 1000);
+          // Check for level ups - XP requirement = currentLevel * 1000
+          while (currentXP >= currentLevel * 1000) {
+            currentXP -= currentLevel * 1000; // Subtract XP needed for this level
+            currentLevel++; // Level up
 
-          if (newLevelThreshold > oldLevelThreshold) {
-            newLevel = newLevelThreshold + 1;
             // Award 500 chips for level up
             const levelUpChips = chipBalance + 500;
             setChipBalance(levelUpChips);
             await updateChipsInDB(levelUpChips);
           }
 
+          newExperience = currentXP;
+          newLevel = currentLevel;
           setPlayerExperience(newExperience);
           setPlayerLevel(newLevel);
         }
@@ -609,7 +609,7 @@ function App() {
                         2 *
                         Math.PI *
                         45 *
-                        (1 - (playerExperience % 1000) / 1000)
+                        (1 - playerExperience / (playerLevel * 1000))
                       }`}
                       strokeLinecap="round"
                       className="transition-all duration-500"
@@ -641,11 +641,12 @@ function App() {
                   </h2>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-orange-400 font-semibold text-xs">
-                      Level {playerLevel}
+                      Lv {playerLevel}
                     </span>
                     <span className="text-white/50 text-xs">•</span>
-                    <span className="text-white/70 text-xs">
-                      {playerExperience % 1000} XP
+                    <span className="text-white/70 text-xs whitespace-nowrap">
+                      {playerExperience.toLocaleString()}/
+                      {(playerLevel * 1000).toLocaleString()}
                     </span>
                   </div>
                 </div>
