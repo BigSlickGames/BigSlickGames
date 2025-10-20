@@ -243,6 +243,17 @@ export default function Shop({ profile, onPurchase, onBack }: ShopProps) {
       const success = await updateChipsInDatabase(newChipAmount);
 
       if (success) {
+        // ✅ Log transaction AFTER chip update succeeds
+        await supabase.from("transactions").insert({
+          user_id: profile.id,
+          item_id: selectedItem.id,
+          item_name: selectedItem.name,
+          chips_purchased: selectedItem.chip_amount,
+          amount_paid: selectedItem.price_real_money,
+          payment_method: "stripe",
+          status: "completed",
+        });
+
         onPurchase(newChipAmount);
         setPurchaseSuccess(
           `Successfully purchased ${selectedItem.chip_amount.toLocaleString()} chips!`
