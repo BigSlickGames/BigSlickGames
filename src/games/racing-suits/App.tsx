@@ -346,22 +346,24 @@ function App() {
       if (totalWinnings > 0) {
         // 1 chip won = 1 XP
         const xpGained = totalWinnings;
-        const newExperience = playerExperience + xpGained;
+        let currentXP = playerExperience + xpGained;
+        let currentLevel = playerLevel;
 
-        let newLevel = playerLevel;
-        let newBalance = chipBalance;
+        // Check for level ups - XP requirement = currentLevel * 1000
+        while (currentXP >= currentLevel * 1000) {
+          currentXP -= currentLevel * 1000; // Subtract XP needed for this level
+          currentLevel++; // Level up
 
-        // Check for level up (every 1000 XP)
-        if (Math.floor(newExperience / 1000) > playerLevel - 1) {
-          newLevel = playerLevel + 1;
-          // newBalance = chipBalance + 500;
+          // Optional: Award bonus chips on level up
+          // const newBalance = chipBalance + 500;
           // setChipBalance(newBalance);
           // await updateChipsInDB(newBalance);
         }
 
-        setPlayerExperience(newExperience);
-        setPlayerLevel(newLevel);
-        await updateProgressInDB(newLevel, newExperience);
+        // Update state and database
+        setPlayerExperience(currentXP);
+        setPlayerLevel(currentLevel);
+        await updateProgressInDB(currentLevel, currentXP);
       }
     }
 
