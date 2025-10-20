@@ -336,12 +336,13 @@ function App() {
       !hasCashedOutRef.current &&
       newMultiplier >= autoCashOutRef.current
     ) {
-      // Use the exact auto cash-out value
       const targetMultiplier = Math.min(
         autoCashOutRef.current,
         crashPointRef.current
       );
-
+      console.log(
+        `Auto Cash-Out Triggered: newMultiplier=${newMultiplier}, autoCashOut=${autoCashOutRef.current}, targetMultiplier=${targetMultiplier}`
+      );
       handleCashOut(targetMultiplier);
       return;
     }
@@ -388,37 +389,32 @@ function App() {
       return;
     }
 
-    // Clean up animation immediately
     cleanupAnimation();
 
-    // Use provided multiplier or current multiplier
     const finalMultiplier =
       typeof multiplierToUse === "number" ? multiplierToUse : currentMultiplier;
 
-    // Validate multiplier
     if (typeof finalMultiplier !== "number" || isNaN(finalMultiplier)) {
       console.error("Invalid multiplier:", finalMultiplier);
       return;
     }
 
-    // Mark as cashed out
     setHasCashedOut(true);
     hasCashedOutRef.current = true;
     setIsGameRunning(false);
     isRunningRef.current = false;
     setCashOutMultiplier(finalMultiplier);
 
-    // Calculate winnings
-    const winAmount = Math.floor(betAmount * finalMultiplier);
-    const newBalance = chipBalanceRef.current + winAmount;
+    // Calculate winnings and profit
+    const winAmount = Math.floor(Math.max(0, betAmount * finalMultiplier));
+    const profit = winAmount - betAmount; // Calculate profit
+    const newBalance = chipBalance + profit; // Add profit to balance
 
-    // Update balance
     setChipBalance(newBalance);
     updateChipsInDB(newBalance);
     setWinnings(winAmount);
     setGameResult("win");
 
-    // Update live bet with cash out multiplier
     setLiveBets((prev) =>
       prev.map((bet, index) =>
         index === prev.length - 1
@@ -426,9 +422,7 @@ function App() {
           : bet
       )
     );
-    const profit = winAmount - betAmount;
     updateGameStats(true, profit);
-    // Award XP equal to chips won (profit only)
   };
 
   // Start animation when game starts
@@ -726,7 +720,7 @@ function App() {
                     disabled={isGameRunning}
                   />
                 </div>
-                <div className="mb-3">
+                {/* <div className="mb-3">
                   <label className="block text-white/70 text-sm mb-2">
                     Auto Cash Out:{" "}
                     <span className="text-white font-bold">
@@ -755,8 +749,8 @@ function App() {
                     }}
                     disabled={isGameRunning || !autoCashOutEnabled}
                   />
-                </div>
-                <div className="mb-3 flex items-center justify-between glass-card p-3 rounded-lg bg-black/40 border border-orange-500/20">
+                </div> */}
+                {/* <div className="mb-3 flex items-center justify-between glass-card p-3 rounded-lg bg-black/40 border border-orange-500/20">
                   <span className="text-white/70 text-sm">
                     Enable Auto Cash Out
                   </span>
@@ -777,7 +771,7 @@ function App() {
                       }`}
                     />
                   </button>
-                </div>
+                </div> */}
                 {!isGameRunning && (
                   <button
                     onClick={startGame}
@@ -1087,15 +1081,17 @@ function App() {
                       <span className="text-white font-bold">Net Result:</span>
                       <span
                         className={`font-bold text-lg ${
-                          gameResult === "win"
+                          gameResult === "win" && winnings >= betAmount
                             ? "text-green-400"
                             : "text-red-400"
                         }`}
                       >
-                        {Math.max(0, winnings - betAmount) > 0 ? "+" : "-"}
-                        {gameResult === "win"
-                          ? Math.abs(winnings - betAmount)
-                          : betAmount}{" "}
+                        {gameResult === "win" && winnings >= betAmount
+                          ? "+" + Math.abs(winnings - betAmount)
+                          : "-" +
+                            (gameResult === "loss"
+                              ? betAmount
+                              : Math.abs(winnings - betAmount))}{" "}
                         chips
                       </span>
                     </div>

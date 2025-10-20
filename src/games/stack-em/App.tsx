@@ -265,11 +265,26 @@ export default function App() {
     collectWinnings();
 
     if (winnings > 0) {
-      const xpGained = winnings; // 1 chip won = 1 XP
-      const newExperience = playerExperience + xpGained;
-      setPlayerExperience(newExperience);
+      const xpGained = winnings; // 1 chip won = 1 XP, same as Racing Suits
+      let currentXP = playerExperience + xpGained;
+      let currentLevel = playerLevel;
+
+      // Dynamic leveling system from Racing Suits
+      while (currentXP >= currentLevel * 1000) {
+        currentXP -= currentLevel * 1000;
+        currentLevel++;
+      }
+
+      setPlayerExperience(currentXP);
+      setPlayerLevel(currentLevel);
       setGameState((prev) => ({ ...prev, showXPAnimation: true }));
       updateGameStats(true);
+      updateProgressInDB(currentLevel, currentXP); // Save to DB
+      console.log("handleCollectWinnings: Progress updated", {
+        xpGained,
+        currentXP,
+        currentLevel,
+      });
     }
 
     setShowCollectSuccessModal(true);
@@ -300,13 +315,20 @@ export default function App() {
 
   useEffect(() => {
     if (playerExperience > 0 && !loading) {
-      const newLevel = Math.floor(playerExperience / 1000) + 1;
-      if (newLevel !== playerLevel) {
-        setPlayerLevel(newLevel);
-        const bonusChips = 500;
-        setGameState((prev) => ({ ...prev, chips: prev.chips + bonusChips }));
+      let currentXP = playerExperience;
+      let currentLevel = playerLevel;
+
+      // Check for level-up using dynamic threshold
+      while (currentXP >= currentLevel * 1000) {
+        currentXP -= currentLevel * 1000;
+        currentLevel++;
       }
-      updateProgressInDB(newLevel, playerExperience);
+
+      if (currentLevel !== playerLevel) {
+        setPlayerLevel(currentLevel);
+        setPlayerExperience(currentXP);
+        updateProgressInDB(currentLevel, currentXP);
+      }
     }
   }, [playerExperience, loading]);
 
@@ -399,7 +421,12 @@ export default function App() {
                       stroke="url(#orangeGradient)"
                       strokeWidth="4"
                       strokeDasharray={`${2 * Math.PI * 45}`}
-                      strokeDashoffset={`${2 * Math.PI * 45 * (1 - (playerExperience % 1000) / 1000)}`}
+                      strokeDashoffset={`${
+                        2 *
+                        Math.PI *
+                        45 *
+                        (1 - playerExperience / (playerLevel * 1000))
+                      }`}
                       strokeLinecap="round"
                       className="transition-all duration-500"
                     />
@@ -434,7 +461,8 @@ export default function App() {
                     </span>
                     <span className="text-white/50 text-xs">•</span>
                     <span className="text-white/70 text-xs">
-                      {playerExperience % 1000} XP
+                      {playerExperience.toLocaleString()}/
+                      {(playerLevel * 1000).toLocaleString()} XP
                     </span>
                   </div>
                 </div>
