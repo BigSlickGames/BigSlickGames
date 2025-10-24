@@ -309,6 +309,11 @@ export default function Dashboard({
       window.location.href = "/play/stack-em";
       return;
     }
+
+    if (gameId === "poker-opoly") {
+      window.location.href = "/play/poker-opoly";
+      return;
+    }
     const gameUrls = {
       "stack-em": "https://create-iphone-templa-hb73.bolt.host/",
       "sink-em": "https://deck-realms-card-builder.netlify.app/",

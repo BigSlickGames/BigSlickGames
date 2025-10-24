@@ -36,4 +36,13 @@ export const GAMES: Record<string, Game> = {
     minBet: 1,
     maxBet: 1000,
   },
+  "poker-opoly": {
+    id: "poker-opoly",
+    name: "Poker-Opoly",
+    description: "Roll the dice, collect cards, and build poker hands!",
+    icon: "/images/POKER-OPOLY.png", // or create a specific icon
+    component: lazy(() => import("./pokeropoly/App")),
+    minBet: 100,
+    maxBet: 10000,
+  },
 };

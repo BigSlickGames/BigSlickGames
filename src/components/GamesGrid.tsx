@@ -169,7 +169,7 @@ const games = [
     },
   },
   {
-    id: "pokeroply",
+    id: "poker-opoly",
     name: "Poker'oply",
     color: "from-emerald-300 to-green-900",
     glowColor: "shadow-emerald-500/40",
@@ -210,7 +210,7 @@ export default function GamesGrid({
     "multi-up": 0,
     "sink-em": 0,
     "deck-realms": 0,
-    pokeroply: 0,
+    "poker-opoly": 0,
     "space-crash": 0,
     "integration-test": 0,
   };
@@ -249,7 +249,10 @@ export default function GamesGrid({
     .filter(Boolean);
 
   const hasPlayButton = (id: string) =>
-    id === "racing-suits" || id === "space-crash" || id === "stack-em";
+    id === "racing-suits" ||
+    id === "space-crash" ||
+    id === "stack-em" ||
+    id === "poker-opoly"; // Add this line
 
   return (
     <>
