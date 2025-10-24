@@ -9,6 +9,8 @@ import { supabase } from "../../lib/supabase";
 import { RulesPanel } from "./components/RulesPanel";
 import MultiplayerLobby from "./components/MultiplayerLobby";
 import WaitingRoom from "./components/WaitingRoom";
+import { useNavigate } from "react-router-dom";
+
 import {
   detectPokerHand,
   calculatePenalty,
@@ -31,6 +33,8 @@ interface Player {
 }
 
 function App() {
+  const navigate = useNavigate(); // ADD THIS LINE
+
   // 🔥 STATE
   const [gameMode, setGameMode] = useState<"select" | "waiting" | "playing">(
     "select"
@@ -1350,6 +1354,7 @@ function App() {
       <MultiplayerLobby
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        onBack={() => navigate("/home")} // <-- This goes HERE, not in MultiplayerLobby.tsx
       />
     );
   }
@@ -1974,7 +1979,7 @@ function App() {
                         </div>
                       </div>
                     )}
-
+                    {/* Replace the cards display section (around line 1100+) with this: */}
                     {!landedCard && (
                       <div className="h-[340px] bg-gradient-to-br from-black/20 to-black/10 rounded-xl border-2 border-white/10 p-3 flex flex-col m-2 shadow-inner">
                         <div className="text-white/90 text-xs font-black mb-3 uppercase tracking-wider flex items-center gap-2 flex-shrink-0 drop-shadow">
@@ -1983,28 +1988,53 @@ function App() {
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-[20px] pb-[20px] custom-scrollbar">
-                          {player.boughtCards.length > 0 ? (
+                          {/* Only show cards if this is the current user's profile */}
+                          {roomPlayers[index]?.user_id === currentUserId ? (
+                            // Show actual cards for current user
+                            player.boughtCards.length > 0 ? (
+                              <div className="flex flex-wrap justify-center gap-2 min-h-full">
+                                {player.boughtCards.map((card, cardIdx) => (
+                                  <div
+                                    key={cardIdx}
+                                    className="rounded-lg border-3 shadow-xl w-11 h-16 flex flex-col items-center justify-center bg-white p-1 flex-shrink-0 hover:scale-110 transition-transform"
+                                    style={{
+                                      borderColor: getSuitColor(card.suit),
+                                    }}
+                                  >
+                                    <div
+                                      className="text-xs font-black leading-tight"
+                                      style={{ color: getSuitColor(card.suit) }}
+                                    >
+                                      {card.value}
+                                    </div>
+                                    <div
+                                      className="text-lg leading-tight mt-0.5"
+                                      style={{ color: getSuitColor(card.suit) }}
+                                    >
+                                      {card.suit}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-white/50 text-sm font-semibold">
+                                <span>📭 No cards yet</span>
+                              </div>
+                            )
+                          ) : // Show card backs for other players
+                          player.boughtCards.length > 0 ? (
                             <div className="flex flex-wrap justify-center gap-2 min-h-full">
                               {player.boughtCards.map((card, cardIdx) => (
                                 <div
                                   key={cardIdx}
-                                  className="rounded-lg border-3 shadow-xl w-11 h-16 flex flex-col items-center justify-center bg-white p-1 flex-shrink-0 hover:scale-110 transition-transform"
+                                  className="rounded-lg border-3 shadow-xl w-11 h-16 flex flex-col items-center justify-center p-1 flex-shrink-0 hover:scale-110 transition-transform"
                                   style={{
-                                    borderColor: getSuitColor(card.suit),
+                                    background:
+                                      "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                                    borderColor: player.color,
                                   }}
                                 >
-                                  <div
-                                    className="text-xs font-black leading-tight"
-                                    style={{ color: getSuitColor(card.suit) }}
-                                  >
-                                    {card.value}
-                                  </div>
-                                  <div
-                                    className="text-lg leading-tight mt-0.5"
-                                    style={{ color: getSuitColor(card.suit) }}
-                                  >
-                                    {card.suit}
-                                  </div>
+                                  <div className="text-white text-2xl">🂠</div>
                                 </div>
                               ))}
                             </div>
