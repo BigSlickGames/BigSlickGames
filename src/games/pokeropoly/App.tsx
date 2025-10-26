@@ -36,7 +36,7 @@ function App() {
   const navigate = useNavigate(); // ADD THIS LINE
 
   // 🔥 STATE
-  const [gameMode, setGameMode] = useState<"select" | "waiting" | "playing">(
+  const [gameMode, setGameMode] = useState<"select" | "waiting" | "singleWaiting" | "playing">(
     "select"
   );
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
@@ -991,7 +991,7 @@ function App() {
   }, [currentUserId, currentUsername]);
 
   const handleStartSinglePlayer = useCallback(() => {
-    log("🎮", "Starting Single Player Mode");
+    log("🎮", "Entering Single Player Waiting Room");
 
     const singlePlayers: Player[] = [
       {
@@ -1037,19 +1037,71 @@ function App() {
     ];
 
     playersRef.current = singlePlayers;
-    currentIndexRef.current = 0;
-
     setPlayers(singlePlayers);
+    setGameMode("singleWaiting");
+
+    log("✅", "Single Player Waiting Room initialized with 4 players");
+  }, [log]);
+
+  const handleStartSinglePlayerGame = useCallback(() => {
+    log("🎮", "Starting Single Player Game - Dealing Cards");
+
+    // Deal cards using the same logic as multiplayer
+    const suits = ["♠", "♥", "♦", "♣"];
+    const values = [
+      "A",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "J",
+      "Q",
+      "K",
+    ];
+
+    const fullDeck: { suit: string; value: string }[] = [];
+    suits.forEach((suit) =>
+      values.forEach((value) => fullDeck.push({ suit, value }))
+    );
+
+    // Shuffle deck
+    for (let i = fullDeck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [fullDeck[i], fullDeck[j]] = [fullDeck[j], fullDeck[i]];
+    }
+
+    const newDealtCards: { [key: number]: { suit: string; value: string } } = {};
+    let deckIndex = 0;
+
+    // Deal cards to board (skip corners and question marks)
+    for (let i = 0; i < 64; i++) {
+      if (i === 0 || i === 16 || i === 32 || i === 48) continue;
+      if ([5, 11, 21, 27, 37, 43, 53, 59].includes(i)) continue;
+      newDealtCards[i] = fullDeck[deckIndex++];
+    }
+
+    // Set joker positions (2 random question marks)
+    const questionMarkPositions = [5, 11, 21, 27, 37, 43, 53, 59];
+    const shuffled = [...questionMarkPositions].sort(() => Math.random() - 0.5);
+    const newJokerPositions = shuffled.slice(0, 2);
+
+    currentIndexRef.current = 0;
     setCurrentPlayerIndex(0);
     setPlayerPositions([0, 16, 32, 48]);
     setGameStarted(true);
     setGameMode("playing");
-    setDealtCards({});
+    setDealtCards(newDealtCards);
+    setJokerPositions(newJokerPositions);
     setCardOwners({});
     setHasRolledThisTurn(false);
     setBaseRotation(0);
 
-    log("✅", "Single Player Mode initialized with 4 players");
+    log("✅", `Single Player Game started with ${Object.keys(newDealtCards).length} cards dealt`);
   }, [log]);
 
   const handleJoinRoom = useCallback(
@@ -1419,6 +1471,72 @@ function App() {
         onStartSinglePlayer={handleStartSinglePlayer}
         onBack={() => navigate("/home")} // <-- This goes HERE, not in MultiplayerLobby.tsx
       />
+    );
+  }
+
+  if (gameMode === "singleWaiting") {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center p-4"
+        style={{
+          backgroundImage: "url(/games/pokeropoly/images/background.png)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div className="relative z-10 w-full max-w-3xl">
+          <div className="bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl border-2 border-yellow-500/50 rounded-2xl shadow-2xl p-6 mb-4">
+            <h2 className="text-2xl font-bold text-white mb-4 text-center">
+              Single Player Mode
+            </h2>
+            <p className="text-gray-300 text-center mb-6">
+              You'll play against 3 AI players
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              {players.map((player, index) => (
+                <div
+                  key={index}
+                  className="bg-gradient-to-br from-gray-800/95 to-gray-900/95 border-2 border-gray-600 rounded-xl p-4 shadow-xl"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg border-2 border-white/40"
+                      style={{ backgroundColor: player.color }}
+                    >
+                      {player.suit}
+                    </div>
+                    <div>
+                      <p className="text-white font-bold">{player.name}</p>
+                      <p className="text-gray-400 text-sm">
+                        {["Bottom", "Left", "Top", "Right"][index]}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 text-black font-black px-3 py-1.5 rounded-lg shadow-lg text-sm text-center">
+                    ${player.chips.toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handleStartSinglePlayerGame}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white font-bold py-4 px-6 rounded-lg shadow-xl transition-all border-2 border-green-400/50 hover:scale-105 flex items-center justify-center gap-2 text-lg"
+            >
+              <span>🎲</span>
+              <span>Start Game & Deal Cards</span>
+            </button>
+
+            <button
+              onClick={() => setGameMode("select")}
+              className="w-full mt-3 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all border border-gray-500"
+            >
+              Back to Lobby
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
