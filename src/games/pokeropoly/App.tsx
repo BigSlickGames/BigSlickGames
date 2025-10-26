@@ -1864,14 +1864,17 @@ function App() {
             if (!player || !player.color) return null;
 
             const profilePositions = {
-              bottom: { x: 0, y: 230, rotateZ: 0 },
-              left: { x: -230, y: 0, rotateZ: 90 },
-              top: { x: 0, y: -230, rotateZ: 180 },
-              right: { x: 230, y: 0, rotateZ: 270 },
+              bottom: { x: 0, y: 280, rotateZ: 0 },
+              left: { x: -280, y: 0, rotateZ: 90 },
+              top: { x: 0, y: -280, rotateZ: 180 },
+              right: { x: 280, y: 0, rotateZ: 270 },
             };
             const pos = profilePositions[player.position];
             const playerRotationX =
-              index === 0 ? 0 : index === 1 ? 60 : index === 2 ? 0 : 60;
+              player.position === 'bottom' ? -15 :
+              player.position === 'left' ? -75 :
+              player.position === 'top' ? -15 :
+              -75;
 
             return (
               <div
@@ -1880,10 +1883,10 @@ function App() {
                 style={{
                   left: "50%",
                   top: "50%",
-                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) 
-                        rotateZ(${pos.rotateZ}deg) 
-                        rotateX(${playerRotationX}deg) 
-                        translateZ(23px)`,
+                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)
+                        rotateZ(${pos.rotateZ}deg)
+                        rotateX(${playerRotationX}deg)
+                        translateZ(80px)`,
                 }}
               >
                 <div
