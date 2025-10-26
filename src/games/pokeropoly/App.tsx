@@ -990,6 +990,68 @@ function App() {
     setGameMode("waiting");
   }, [currentUserId, currentUsername]);
 
+  const handleStartSinglePlayer = useCallback(() => {
+    log("🎮", "Starting Single Player Mode");
+
+    const singlePlayers: Player[] = [
+      {
+        name: "Player 1",
+        chips: 1500,
+        color: "#FF6B6B",
+        position: "bottom",
+        collectedCards: [],
+        boughtCards: [],
+        boardPosition: 0,
+        suit: "♠",
+      },
+      {
+        name: "Player 2",
+        chips: 1500,
+        color: "#4ECDC4",
+        position: "left",
+        collectedCards: [],
+        boughtCards: [],
+        boardPosition: 16,
+        suit: "♥",
+      },
+      {
+        name: "Player 3",
+        chips: 1500,
+        color: "#45B7D1",
+        position: "top",
+        collectedCards: [],
+        boughtCards: [],
+        boardPosition: 32,
+        suit: "♦",
+      },
+      {
+        name: "Player 4",
+        chips: 1500,
+        color: "#96CEB4",
+        position: "right",
+        collectedCards: [],
+        boughtCards: [],
+        boardPosition: 48,
+        suit: "♣",
+      },
+    ];
+
+    playersRef.current = singlePlayers;
+    currentIndexRef.current = 0;
+
+    setPlayers(singlePlayers);
+    setCurrentPlayerIndex(0);
+    setPlayerPositions([0, 16, 32, 48]);
+    setGameStarted(true);
+    setGameMode("playing");
+    setDealtCards({});
+    setCardOwners({});
+    setHasRolledThisTurn(false);
+    setBaseRotation(0);
+
+    log("✅", "Single Player Mode initialized with 4 players");
+  }, [log]);
+
   const handleJoinRoom = useCallback(
     async (roomCode: string) => {
       if (!currentUserId) {
@@ -1354,6 +1416,7 @@ function App() {
       <MultiplayerLobby
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        onStartSinglePlayer={handleStartSinglePlayer}
         onBack={() => navigate("/home")} // <-- This goes HERE, not in MultiplayerLobby.tsx
       />
     );

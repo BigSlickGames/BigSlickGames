@@ -6,16 +6,19 @@ import { Users, Plus, LogIn, ArrowLeft } from "lucide-react";
 interface MultiplayerLobbyProps {
   onCreateRoom: () => void;
   onJoinRoom: (roomCode: string) => void;
+  onStartSinglePlayer?: () => void;
   onBack?: () => void;
 }
 
 export default function MultiplayerLobby({
   onCreateRoom,
   onJoinRoom,
+  onStartSinglePlayer,
   onBack,
 }: MultiplayerLobbyProps) {
   const [roomCode, setRoomCode] = useState("");
   const [showJoinInput, setShowJoinInput] = useState(false);
+  const [showModeSelect, setShowModeSelect] = useState(true);
 
   const handleJoinSubmit = () => {
     if (roomCode.trim().length === 6) {
@@ -55,13 +58,60 @@ export default function MultiplayerLobby({
               POKER-OPOLY
             </h1>
             <p className="text-base sm:text-xl text-gray-300">
-              Multiplayer Mode
+              {showModeSelect ? "Select Game Mode" : "Multiplayer Mode"}
             </p>
           </div>
 
-          {!showJoinInput ? (
-            /* Main Menu */
+          {showModeSelect ? (
+            /* Mode Selection */
             <div className="space-y-3 sm:space-y-4">
+              {/* Single Player Button */}
+              {onStartSinglePlayer && (
+                <button
+                  onClick={onStartSinglePlayer}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-700 hover:from-purple-500 hover:to-pink-600 text-white font-bold py-4 sm:py-6 px-6 sm:px-8 rounded-xl shadow-2xl transition-all hover:scale-105 active:scale-95 border border-purple-400/50 sm:border-2 group relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 group-hover:translate-x-full transition-transform duration-700"></div>
+                  <div className="relative flex items-center justify-center gap-2 sm:gap-3">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+                    <div className="text-left">
+                      <div className="text-lg sm:text-2xl">Single Player</div>
+                      <div className="text-xs sm:text-sm text-purple-100">
+                        Play all 4 players yourself
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              {/* Multiplayer Button */}
+              <button
+                onClick={() => setShowModeSelect(false)}
+                className="w-full bg-gradient-to-r from-orange-600 to-red-700 hover:from-orange-500 hover:to-red-600 text-white font-bold py-4 sm:py-6 px-6 sm:px-8 rounded-xl shadow-2xl transition-all hover:scale-105 active:scale-95 border border-orange-400/50 sm:border-2 group relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 group-hover:translate-x-full transition-transform duration-700"></div>
+                <div className="relative flex items-center justify-center gap-2 sm:gap-3">
+                  <Users className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="text-lg sm:text-2xl">Multiplayer</div>
+                    <div className="text-xs sm:text-sm text-orange-100">
+                      Play with friends online
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          ) : !showJoinInput ? (
+            /* Multiplayer Menu */
+            <div className="space-y-3 sm:space-y-4">
+              <button
+                onClick={() => setShowModeSelect(true)}
+                className="text-gray-400 hover:text-white transition-colors flex items-center gap-2 mb-2 text-sm sm:text-base"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to mode selection
+              </button>
+
               {/* Create Room Button */}
               <button
                 onClick={onCreateRoom}
