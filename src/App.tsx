@@ -253,45 +253,22 @@ function App() {
     setProfile(profileData);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <span className="text-white text-2xl font-bold">GH</span>
-          </div>
-          <div className="w-8 h-8 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin mx-auto"></div>
-        </div>
-      </div>
-    );
-  }
+  // Skip auth check - go straight to dashboard
   return (
     <div className="min-h-screen h-full w-full bg-gradient-to-br from-gray-900 via-gray-800 to-black">
       <BrowserRouter>
         <Routes>
           <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Add game route - accessible even when logged in */}
+          {/* Add game route - accessible without auth */}
           <Route
             path="/play/:gameId"
-            element={
-              user && profile ? (
-                <GameContainer />
-              ) : (
-                <AuthScreen onAuthSuccess={handleAuthSuccess} />
-              )
-            }
+            element={<GameContainer />}
           />
 
           <Route
             path="/*"
-            element={
-              !user || !profile ? (
-                <AuthScreen onAuthSuccess={handleAuthSuccess} />
-              ) : (
-                <Dashboard user={user} profile={profile} />
-              )
-            }
+            element={<Dashboard user={user} profile={profile} />}
           />
         </Routes>
       </BrowserRouter>
