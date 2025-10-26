@@ -253,7 +253,27 @@ function App() {
     setProfile(profileData);
   };
 
-  // Skip auth check - go straight to dashboard
+  // Skip auth check - go straight to dashboard with mock user
+  const mockUser = user || {
+    id: 'dev-user-123',
+    email: 'dev@test.com'
+  };
+
+  const mockProfile = profile || {
+    id: 'dev-user-123',
+    email: 'dev@test.com',
+    username: 'DevUser',
+    chips: 50000,
+    level: 1,
+    experience: 0,
+    theme_preference: 'orange',
+    preferences: {
+      sound: true,
+      theme: 'orange',
+      notifications: true
+    }
+  };
+
   return (
     <div className="min-h-screen h-full w-full bg-gradient-to-br from-gray-900 via-gray-800 to-black">
       <BrowserRouter>
@@ -268,7 +288,7 @@ function App() {
 
           <Route
             path="/*"
-            element={<Dashboard user={user} profile={profile} />}
+            element={<Dashboard user={mockUser} profile={mockProfile} />}
           />
         </Routes>
       </BrowserRouter>
