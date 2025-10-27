@@ -10,6 +10,15 @@ import { RulesPanel } from "./components/RulesPanel";
 import MultiplayerLobby from "./components/MultiplayerLobby";
 import WaitingRoom from "./components/WaitingRoom";
 import { useNavigate } from "react-router-dom";
+import LocalGame from "./LocalGame"; // Adjust path as needed
+import {
+  MYSTERY_CARDS,
+  BOMB_CARDS,
+  JOKER_CARD,
+  MysteryCard,
+  getRandomMysteryCard,
+  QUESTION_MARK_POSITIONS,
+} from "./data/mysteryCards";
 
 import {
   detectPokerHand,
@@ -30,6 +39,11 @@ interface Player {
   boughtCards: Array<{ suit: string; value: string; position: number }>;
   boardPosition: number;
   suit: string;
+  isEliminated: boolean;
+  wilds: number; // Number of active wilds
+  wildCollectedAt: number[]; // Positions where wilds were collected
+  lastBoardPosition: number; // Track for lap completion
+  lapsCompleted: number; // Track full laps (0-based)
 }
 
 function App() {
@@ -39,6 +53,8 @@ function App() {
   const [gameMode, setGameMode] = useState<"select" | "waiting" | "playing">(
     "select"
   );
+  const [showLocalGame, setShowLocalGame] = useState(false);
+
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>("");
@@ -91,6 +107,14 @@ function App() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isRolling, setIsRolling] = useState(false);
   const [hasRolledThisTurn, setHasRolledThisTurn] = useState(false);
+  const [winner, setWinner] = useState<Player | null>(null);
+  const [gameOver, setGameOver] = useState(false);
+  const [mysteryCardPositions, setMysteryCardPositions] = useState<{
+    [position: number]: MysteryCard;
+  }>({});
+  const [showMysteryCard, setShowMysteryCard] = useState<MysteryCard | null>(
+    null
+  );
 
   // 🔥 REFS - SOURCE OF TRUTH
   const subscriptionRef = useRef<any>(null);
@@ -129,7 +153,128 @@ function App() {
     [log]
   );
 
+  // 🏆 CHECK GAME OVER - LAST PLAYER STANDING WINS
+  const checkGameOver = useCallback(() => {
+    const activePlayers = playersRef.current.filter(
+      (p) => !p.isEliminated && p.chips > 0
+    );
+
+    if (activePlayers.length === 1) {
+      log("🏆", "WINNER FOUND", { winner: activePlayers[0].name });
+      setWinner(activePlayers[0]);
+      setGameOver(true);
+      return true;
+    }
+
+    if (activePlayers.length === 0) {
+      log("🏆", "ALL PLAYERS ELIMINATED");
+      setGameOver(true);
+      return true;
+    }
+
+    return false;
+  }, [log]);
+
+  const applyMysteryCardEffects = useCallback(
+    (card: MysteryCard, playerIndex: number) => {
+      const effects = card.effects;
+
+      setPlayers((prev) => {
+        const updated = [...prev];
+        const player = updated[playerIndex];
+
+        // Chip bonus/penalty
+        if (effects.cb) {
+          player.chips = Math.max(0, player.chips + effects.cb);
+          // log("💰", `${player.name} chips \${effects.cb > 0 ? '+' : ''}\${effects.cb}`);
+
+          // Check elimination
+          if (player.chips <= 0) {
+            player.isEliminated = true;
+            // log("💀", `${player.name} ELIMINATED by mystery card\`);
+          }
+        }
+
+        // Collect/pay each player
+        if (effects.ce) {
+          const amount = effects.ce;
+          updated.forEach((p, idx) => {
+            if (idx !== playerIndex && !p.isEliminated) {
+              if (amount > 0) {
+                // Collect from each player
+                const collectAmount = Math.min(Math.abs(amount), p.chips);
+                p.chips = Math.max(0, p.chips - collectAmount);
+                player.chips += collectAmount;
+              } else {
+                // Pay each player
+                const payAmount = Math.min(Math.abs(amount), player.chips);
+                player.chips = Math.max(0, player.chips - payAmount);
+                p.chips += payAmount;
+              }
+            }
+          });
+          // log("💸", `${player.name} \${amount > 0 ? 'collected' : 'paid'} \${Math.abs(amount)} per player\`);
+        }
+
+        playersRef.current = updated;
+        return updated;
+      });
+
+      setTimeout(() => checkGameOver(), 1000);
+    },
+    [log, checkGameOver]
+  );
+
+  const checkWildExpiration = useCallback(
+    (player: Player, newPosition: number) => {
+      const oldPosition = player.lastBoardPosition;
+
+      // Check if player crossed position 0 (completed a lap)
+      if (oldPosition > 50 && newPosition < 14) {
+        player.lapsCompleted += 1;
+        // log("🔄", `${player.name} completed lap \${player.lapsCompleted}`);
+
+        // Expire all wilds after completing 1 lap
+        if (player.wilds > 0) {
+          const expiredCount = player.wilds;
+          player.wilds = 0;
+          player.wildCollectedAt = [];
+          // log("⏰", `${player.name} lost \${expiredCount} expired wild(s)\`);
+        }
+      }
+
+      player.lastBoardPosition = newPosition;
+      return player;
+    },
+    [log]
+  );
+
+  const handlePlayLocal = useCallback(() => {
+    log("🎮", "SWITCHING TO LOCAL MODE");
+    setShowLocalGame(true);
+    setGameMode("playing"); // Or create a new 'local' mode
+  }, [log]);
   // 🔥 INITIALIZE GAME
+
+  const initializeMysteryCards = useCallback(() => {
+    const mysteryMap: { [position: number]: MysteryCard } = {};
+    const jokerCount = Math.floor(Math.random() * 3) + 1;
+    const shuffledPositions = [...QUESTION_MARK_POSITIONS].sort(
+      () => Math.random() - 0.5
+    );
+    shuffledPositions.forEach((pos, index) => {
+      const card = index < jokerCount ? JOKER_CARD : getRandomMysteryCard();
+      mysteryMap[pos] = card;
+      log(
+        "🃏",
+        `initializeMysteryCards: Assigned to position ${pos}`,
+        JSON.stringify(card, null, 2)
+      );
+    });
+    setMysteryCardPositions(mysteryMap);
+    return mysteryMap;
+  }, [log]);
+
   const initializeFromGameState = useCallback(
     async (room: Room) => {
       log("🎲", "=== INITIALIZING GAME STATE ===");
@@ -152,11 +297,12 @@ function App() {
 
       setDealtCards(room.game_state?.dealtCards || {});
       setJokerPositions(room.game_state?.jokerPositions || []);
+      initializeMysteryCards();
 
       const gamePlayers: Player[] = freshPlayers.map((rp, idx) => {
         const player = {
           name: rp.player_name,
-          chips: rp.chips || 1500,
+          chips: 15000,
           color:
             rp.player_color ||
             ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4"][idx],
@@ -165,6 +311,11 @@ function App() {
           boughtCards: rp.bought_cards || [],
           boardPosition: rp.board_position || [0, 16, 32, 48][idx],
           suit: rp.player_suit || ["♠", "♥", "♦", "♣"][idx],
+          isEliminated: false,
+          wilds: 0,
+          wildCollectedAt: [],
+          lastBoardPosition: rp.board_position || [0, 16, 32, 48][idx],
+          lapsCompleted: 0,
         };
         log("👤", `PLAYER ${idx}: ${player.name} POS: ${player.boardPosition}`);
         return player;
@@ -186,6 +337,60 @@ function App() {
     },
     [log]
   );
+
+  // 💰 DEDUCT 15000 FROM PLAYER ACCOUNTS
+  const deductChipsFromAccounts = async () => {
+    if (!currentRoom?.id || !currentRoom.room_players) return;
+
+    for (const rp of currentRoom.room_players) {
+      try {
+        // Skip if already deducted
+        if (rp.chips_deducted) {
+          log("⏭️", `Chips already deducted for ${rp.player_name}`);
+          continue;
+        }
+
+        // Calculate new balance
+        const newBalance = Math.max(0, (rp.chips || 0) - 15000);
+
+        // Update database
+        const { error } = await supabase
+          .from("poker_opoly_players") // ✅ Your table name
+          .update({
+            chips: newBalance,
+            chips_deducted: true,
+          })
+          .eq("room_id", currentRoom.id) // ✅ room_id matches your schema
+          .eq("user_id", rp.user_id); // ✅ user_id matches your schema
+
+        if (error) {
+          console.error("Failed to deduct chips:", rp.player_name, error);
+        } else {
+          log(
+            "💰",
+            `Deducted 15000 from ${rp.player_name}. New balance: ${newBalance}`
+          );
+        }
+      } catch (err) {
+        console.error("Error deducting chips:", err);
+      }
+    }
+  };
+
+  // ✅ FIXED: Moved to useEffect to prevent infinite loop
+  const hasDeductedChips = useRef(false);
+
+  useEffect(() => {
+    if (
+      gameMode === "playing" &&
+      currentRoom?.id &&
+      !hasDeductedChips.current
+    ) {
+      log("💰", "DEDUCTING CHIPS FROM ACCOUNTS");
+      deductChipsFromAccounts();
+      hasDeductedChips.current = true;
+    }
+  }, [gameMode, currentRoom?.id, deductChipsFromAccounts, log]);
 
   const applyBuyCard = useCallback(
     (data: any) => {
@@ -255,12 +460,18 @@ function App() {
         }
 
         const updated = [...prev];
+        const newChips = Math.max(0, player.chips - price);
         updated[safeIndex] = {
           ...player,
           collectedCards: [...player.collectedCards, card],
           boughtCards: [...player.boughtCards, { ...card, position }],
-          chips: Math.max(0, player.chips - price),
+          chips: newChips,
+          isEliminated: newChips <= 0,
         };
+
+        if (newChips <= 0) {
+          log("💀", `${player.name} ELIMINATED - OUT OF CHIPS`);
+        }
 
         playersRef.current = updated;
         log("✅", `BUY APPLIED - chips: ${updated[safeIndex].chips}`);
@@ -288,13 +499,20 @@ function App() {
           return prev;
         }
         const updated = [...prev];
-        updated[safePayer].chips = Math.max(
-          0,
-          updated[safePayer].chips - amount
-        );
+        const newChips = Math.max(0, updated[safePayer].chips - amount);
+        updated[safePayer].chips = newChips;
+        updated[safePayer].isEliminated = newChips <= 0;
         updated[safeReceiver].chips += amount;
+
+        if (newChips <= 0) {
+          log("💀", `${updated[safePayer].name} ELIMINATED AFTER PENALTY`);
+        }
+
         playersRef.current = updated;
         log("✅", "PENALTY APPLIED");
+
+        setTimeout(() => checkGameOver(), 500);
+
         return updated;
       });
       setPenaltyInfo(null);
@@ -401,22 +619,91 @@ function App() {
           const owner = cardOwners[finalPosition];
           log("🎯", "LANDED ON", { finalPosition, card, owner });
 
-          if (card && owner !== undefined && owner !== safeIndex) {
+          // ✅ CHECK FOR MYSTERY CARD
+          const mysteryCard = mysteryCardPositions[finalPosition];
+
+          if (mysteryCard) {
+            log("❓", "LANDED ON MYSTERY CARD", mysteryCard.title);
+            setShowMysteryCard(mysteryCard);
+
+            // Update player state for mystery card
+            setPlayers((prev) => {
+              const updated = [...prev];
+
+              // Check for wild expiration
+              updated[safeIndex] = checkWildExpiration(
+                updated[safeIndex],
+                finalPosition
+              );
+
+              // Handle Joker collection
+              if (mysteryCard.deck === "Joker") {
+                updated[safeIndex] = {
+                  ...updated[safeIndex],
+                  wilds: updated[safeIndex].wilds + 1,
+                  wildCollectedAt: [
+                    ...updated[safeIndex].wildCollectedAt,
+                    finalPosition,
+                  ],
+                };
+                log(
+                  "🃏",
+                  `${updated[safeIndex].name} collected a WILD! Total: ${updated[safeIndex].wilds}`
+                );
+              }
+
+              playersRef.current = updated;
+              return updated;
+            });
+
+            // Apply mystery card effects
+            applyMysteryCardEffects(mysteryCard, safeIndex);
+
+            // Auto-close and end turn after 3 seconds
+            setTimeout(() => {
+              setShowMysteryCard(null);
+              setHasRolledThisTurn(false);
+
+              const nextIndex = (safeIndex + 1) % playersRef.current.length;
+              setCurrentPlayerIndex(nextIndex);
+              currentIndexRef.current = nextIndex;
+              log("➡️", `AUTO NEXT TURN: Player ${nextIndex}`);
+            }, 3000);
+          } else if (card && owner !== undefined && owner !== safeIndex) {
             log("⚠️", "PENALTY TRIGGERED");
-            const currentPlayer = playersRef.current[safeIndex];
             const ownerPlayer = playersRef.current[owner];
-            const hand = detectPokerHand(
-              ownerPlayer.collectedCards.filter((c) => c !== null) as any
+
+            // Get owner's bought cards (these form potential poker hands)
+            const ownerBoughtCards = ownerPlayer.boughtCards.filter(
+              (c): c is Card => c !== null
             );
-            const penalty = calculatePenalty(hand);
+
+            log("💸", "CALCULATING PENALTY");
+            log("💸", "Landed card:", card);
+            log("💸", "Owner cards:", ownerBoughtCards.length);
+
+            // ✅ CORRECT - Pass the landed CARD and owner's cards
+            const { penalty, hand } = calculatePenalty(card, ownerBoughtCards);
+
+            log("💸", "Penalty calculated:", penalty);
+            log("💸", "Hand detected:", hand || "None");
+
+            // Get the hand cards for display if there's a poker hand
+            let handCards: Card[] = [];
+            if (hand && hand !== "High Card") {
+              const handResult = detectPokerHand(ownerBoughtCards);
+              if (handResult && handResult.cards) {
+                handCards = handResult.cards;
+              }
+            }
+
+            log("💸", "Hand cards for display:", handCards.length);
 
             setPenaltyInfo({
               card,
               penalty,
               hand,
-              handCards: ownerPlayer.collectedCards.filter(
-                (c) => c !== null
-              ) as any,
+              handCards,
               ownerIndex: owner,
             });
           } else if (card && owner === undefined) {
@@ -431,7 +718,17 @@ function App() {
         }
       }, 300);
     },
-    [dealtCards, cardOwners, endTurn, playerPositions, getSafePlayerIndex, log]
+    [
+      dealtCards,
+      cardOwners,
+      endTurn,
+      playerPositions,
+      getSafePlayerIndex,
+      log,
+      mysteryCardPositions,
+      checkWildExpiration,
+      applyMysteryCardEffects,
+    ]
   );
 
   const handleDrawFromShoe = useCallback(
@@ -1354,11 +1651,15 @@ function App() {
       <MultiplayerLobby
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        onPlayLocal={handlePlayLocal} // ADD THIS LINE
         onBack={() => navigate("/home")} // <-- This goes HERE, not in MultiplayerLobby.tsx
       />
     );
   }
-
+  if (showLocalGame) {
+    // Import your LocalGame component at the top
+    return <LocalGame />;
+  }
   if (gameMode === "waiting") {
     if (!currentRoom) return null;
     return (
@@ -1374,6 +1675,105 @@ function App() {
     );
   }
 
+  // 🏆 WINNER SCREEN
+  if (gameOver && winner) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900">
+        <div className="bg-black/60 backdrop-blur-xl rounded-3xl p-12 border-4 border-yellow-400 shadow-2xl max-w-2xl w-full mx-4">
+          <div className="text-center space-y-6">
+            <div className="text-8xl mb-4 animate-bounce">🏆</div>
+            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-500 mb-4">
+              WINNER!
+            </h1>
+            <div className="text-4xl font-bold text-white mb-8">
+              {winner.name} {winner.suit}
+            </div>
+            <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-2xl p-6 border-2 border-green-400/50">
+              <div className="text-yellow-400 text-5xl font-black mb-2">
+                ${winner.chips.toLocaleString()}
+              </div>
+              <div className="text-white/80 text-lg font-semibold">
+                Final Chips
+              </div>
+            </div>
+            <div className="mt-8 space-y-4">
+              <h3 className="text-2xl font-bold text-white/90 mb-4">
+                Final Standings
+              </h3>
+              {players
+                .sort((a, b) => b.chips - a.chips)
+                .map((player, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-center justify-between p-4 rounded-xl border-2 $${
+                      player.isEliminated
+                        ? "bg-red-900/20 border-red-500/30"
+                        : "bg-white/10 border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold text-white/60">
+                        #{idx + 1}
+                      </div>
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold border-2"
+                        style={{
+                          backgroundColor: player.color + "40",
+                          borderColor: player.color,
+                          color: player.color,
+                        }}
+                      >
+                        {player.suit}
+                      </div>
+                      <div className="text-white font-bold text-lg">
+                        {player.name}
+                      </div>
+                      {player.isEliminated && (
+                        <span className="text-red-400 text-sm font-semibold">
+                          💀 ELIMINATED
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-yellow-400 font-bold text-xl">
+                      ${player.chips.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <button
+              onClick={handleLeaveRoom}
+              className="mt-8 bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:from-blue-600 hover:via-blue-700 hover:to-blue-800 text-white font-black py-4 px-8 rounded-2xl shadow-xl transform hover:scale-105 active:scale-95 transition-all text-lg border-2 border-blue-400/50"
+            >
+              🏠 Back to Lobby
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 🏆 GAME OVER (NO WINNER)
+  if (gameOver && !winner) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+        <div className="bg-black/60 backdrop-blur-xl rounded-3xl p-12 border-4 border-gray-400 shadow-2xl max-w-2xl w-full mx-4">
+          <div className="text-center space-y-6">
+            <div className="text-8xl mb-4">😢</div>
+            <h1 className="text-5xl font-black text-white mb-8">GAME OVER</h1>
+            <p className="text-white/80 text-xl mb-8">
+              All players eliminated!
+            </p>
+            <button
+              onClick={handleLeaveRoom}
+              className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:from-blue-600 hover:via-blue-700 hover:to-blue-800 text-white font-black py-4 px-8 rounded-2xl shadow-xl transform hover:scale-105 active:scale-95 transition-all text-lg border-2 border-blue-400/50"
+            >
+              🏠 Back to Lobby
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (gameMode !== "playing" || players.length === 0) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
@@ -1631,7 +2031,7 @@ function App() {
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + baseRotation}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
             width: "850px",
             height: "850px",
           }}
@@ -1801,10 +2201,10 @@ function App() {
             if (!player || !player.color) return null;
 
             const profilePositions = {
-              bottom: { x: 0, y: 230, rotateZ: 0 },
-              left: { x: -230, y: 0, rotateZ: 90 },
-              top: { x: 0, y: -230, rotateZ: 180 },
-              right: { x: 230, y: 0, rotateZ: 270 },
+              bottom: { x: 0, y: 220, rotateZ: 0 },
+              left: { x: -220, y: 0, rotateZ: 90 },
+              top: { x: 0, y: -220, rotateZ: 180 },
+              right: { x: 220, y: 0, rotateZ: 270 },
             };
             const pos = profilePositions[player.position];
             const playerRotationX =
@@ -1820,71 +2220,74 @@ function App() {
                   transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) 
                         rotateZ(${pos.rotateZ}deg) 
                         rotateX(${playerRotationX}deg) 
-                        translateZ(23px)`,
+                        translateZ(15px)`, // Reduced depth for flatter look
                 }}
               >
                 <div
-                  className="rounded-2xl border-4 shadow-2xl w-[300px] h-[420px] relative overflow-hidden flex flex-col backdrop-blur-sm"
+                  className="rounded-lg border shadow-lg p-3 w-[240px] relative"
                   style={{
-                    background: `linear-gradient(145deg, ${player.color}f0 0%, ${player.color}d0 100%)`,
+                    backgroundColor: `${player.color}CC`, // Slightly transparent for elegance
                     borderColor: player.color,
                     boxShadow:
-                      index === currentPlayerIndex
-                        ? `0 0 50px ${player.color}, 0 0 100px ${player.color}60, 0 20px 60px rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.3)`
-                        : `0 10px 40px rgba(0,0,0,0.4), 0 5px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)`,
+                      currentPlayerIndex === index
+                        ? "0 0 15px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.3)" // Subtler glow
+                        : "0 2px 8px rgba(0, 0, 0, 0.2)", // Minimal shadow when not active
                   }}
                 >
                   {index === currentPlayerIndex && (
-                    <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 text-black font-black text-xs px-5 py-2 rounded-full shadow-xl border-3 border-white animate-pulse z-10">
-                      ⭐ YOUR TURN ⭐
+                    <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-yellow-300 to-yellow-400 text-black font-bold text-xs px-4 py-1 rounded-full shadow-md border border-white/50 z-10">
+                      ⭐ YOUR TURN
                     </div>
                   )}
 
-                  <div className="h-[80px] flex-shrink-0 px-5 py-4 bg-black/30 backdrop-blur-md border-b-2 border-white/20 flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center border-3 border-white/40 shadow-lg"
-                        style={{
-                          backgroundColor: `${player.color}40`,
-                          borderColor: player.color,
-                        }}
-                      >
+                  <div className="bg-gray-900/50 backdrop-blur-sm rounded-md p-2 mb-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <h3
+                          className="text-white font-semibold text-base"
+                          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}
+                        >
+                          {player.name}
+                        </h3>
                         <span
-                          className="text-2xl font-bold"
+                          className="text-xl"
                           style={{
-                            color:
-                              player.suit === "♠"
-                                ? "white"
-                                : getSuitColor(player.suit),
+                            color: player.suit
+                              ? "white"
+                              : getSuitColor(player.suit),
                           }}
                         >
                           {player.suit}
                         </span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-white font-black text-lg truncate drop-shadow-lg">
-                          {player.name}
-                        </h3>
-                        <div className="text-xs text-white/70 font-semibold">
-                          Player {index + 1}
-                        </div>
+                      <div className="bg-black/30 backdrop-blur-sm px-2 py-1 rounded-md">
+                        <span className="text-yellow-300 font-semibold text-sm">
+                          ${player.chips.toLocaleString()}
+                        </span>
                       </div>
                     </div>
-                    <div className="bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 text-black font-black px-4 py-2 rounded-xl shadow-xl text-sm whitespace-nowrap flex-shrink-0 border-2 border-yellow-300">
-                      ${player.chips.toLocaleString()}
-                    </div>
+                    {player.wilds > 0 && (
+                      <div className="mt-1 bg-yellow-400/20 rounded-md px-2 py-1 border border-yellow-300/30">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="text-lg">🃏</span>
+                          <span className="text-yellow-300 font-semibold text-xs">
+                            {player.wilds} WILD{player.wilds > 1 ? "S" : ""}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="h-[340px] overflow-hidden flex flex-col">
+                  <div className="h-[300px] overflow-hidden flex flex-col">
                     {index === currentPlayerIndex &&
                       !landedCard &&
                       !isMoving &&
                       !isRolling && (
-                        <div className="h-[340px] flex flex-col items-center justify-center bg-gradient-to-br from-black/20 to-black/10 rounded-xl border-2 border-yellow-500/40 p-4 m-2">
+                        <div className="h-[300px] flex flex-col items-center justify-center bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-3 m-1">
                           {roomPlayers[currentPlayerIndex]?.user_id ===
                           currentUserId ? (
                             <>
-                              <div className="mb-4 flex-shrink-0">
+                              <div className="mb-3 flex-shrink-0">
                                 <MiniSlotMachine
                                   onRollComplete={onRollComplete}
                                   isVisible={true}
@@ -1892,24 +2295,24 @@ function App() {
                                 />
                               </div>
                               <div className="text-center flex-1 flex flex-col items-center justify-center">
-                                <div className="text-yellow-400 font-black text-lg mb-2 drop-shadow-lg">
+                                <div className="text-yellow-300 font-semibold text-base mb-1 drop-shadow">
                                   🎲 ROLL TO MOVE
                                 </div>
-                                <div className="text-white/80 text-sm font-semibold">
+                                <div className="text-white/70 text-xs font-medium">
                                   Click the slot machine!
                                 </div>
                               </div>
                             </>
                           ) : (
-                            <div className="h-[340px] flex flex-col items-center justify-center">
-                              <div className="w-20 h-20 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full flex items-center justify-center mb-4 flex-shrink-0 shadow-xl border-2 border-gray-600">
-                                <span className="text-3xl">⏳</span>
+                            <div className="h-[300px] flex flex-col items-center justify-center">
+                              <div className="w-16 h-16 bg-gradient-to-br from-gray-600 to-gray-700 rounded-full flex items-center justify-center mb-3 flex-shrink-0 shadow-md border border-gray-500">
+                                <span className="text-2xl">⏳</span>
                               </div>
                               <div className="text-center">
-                                <div className="text-yellow-400 font-black text-lg mb-2 drop-shadow-lg">
+                                <div className="text-yellow-300 font-semibold text-base mb-1 drop-shadow">
                                   {players[currentPlayerIndex]?.name}'s Turn
                                 </div>
-                                <div className="text-white/60 text-sm font-semibold">
+                                <div className="text-white/70 text-xs font-medium">
                                   Waiting for roll...
                                 </div>
                               </div>
@@ -1919,96 +2322,89 @@ function App() {
                       )}
 
                     {index === currentPlayerIndex && landedCard && (
-                      <div className="h-[340px] bg-gradient-to-br from-black/30 to-black/20 backdrop-blur-md rounded-xl border-2 border-white/20 p-4 flex flex-col m-2 shadow-inner">
-                        <div className="text-white/90 text-xs font-black mb-3 uppercase tracking-wider flex-shrink-0 drop-shadow">
-                          🏠 PROPERTY FOR SALE
-                        </div>
-
-                        <div className="flex items-center gap-4 mb-4 flex-shrink-0">
-                          <div className="bg-white rounded-xl shadow-2xl p-3 w-18 h-24 flex flex-col items-center justify-center gap-1 flex-shrink-0 border-2 border-gray-200">
+                      <div className="h-[300px] bg-gray-900/40 backdrop-blur-sm rounded-md border border-white/10 p-3 flex flex-col m-1 shadow-sm">
+                        <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex-shrink-0 drop-shadow"></div>
+                        <div className="flex items-center gap-3 mb-3 flex-shrink-0">
+                          <div className="bg-white rounded-md shadow-md p-2 w-16 h-20 flex flex-col items-center justify-center gap-1 flex-shrink-0 border border-gray-200">
                             <div
-                              className="text-xl font-black leading-none"
+                              className="text-base font-semibold leading-none"
                               style={{ color: getSuitColor(landedCard.suit) }}
                             >
                               {landedCard.value}
                             </div>
                             <div
-                              className="text-2xl leading-none"
+                              className="text-lg leading-none"
                               style={{ color: getSuitColor(landedCard.suit) }}
                             >
                               {landedCard.suit}
                             </div>
                           </div>
                           <div className="flex-1 grid grid-cols-2 gap-2">
-                            <div className="bg-yellow-500/30 p-3 rounded-xl text-center border border-yellow-400/50 shadow-lg">
-                              <div className="text-yellow-300 font-black text-lg drop-shadow">
+                            <div className="bg-yellow-400/20 p-2 rounded-md text-center border border-yellow-300/30 shadow-sm">
+                              <div className="text-yellow-300 font-semibold text-base drop-shadow">
                                 ${getCardPrice(landedCard.value)}
                               </div>
-                              <div className="text-white/70 text-[10px] font-bold">
+                              <div className="text-white/60 text-[9px] font-medium">
                                 Buy
                               </div>
                             </div>
-                            <div className="bg-green-500/30 p-3 rounded-xl text-center border border-green-400/50 shadow-lg">
-                              <div className="text-green-300 font-black text-lg drop-shadow">
+                            <div className="bg-green-400/20 p-2 rounded-md text-center border border-green-300/30 shadow-sm">
+                              <div className="text-green-300 font-semibold text-base drop-shadow">
                                 $
                                 {Math.floor(getCardPrice(landedCard.value) / 2)}
                               </div>
-                              <div className="text-white/70 text-[10px] font-bold">
+                              <div className="text-white/60 text-[9px] font-medium">
                                 Sell
                               </div>
                             </div>
                           </div>
                         </div>
-
-                        <div className="flex gap-2 mt-auto pt-3 border-t-2 border-white/20 flex-shrink-0">
+                        <div className="flex gap-2 mt-auto pt-2 border-t border-white/10 flex-shrink-0">
                           <button
                             onClick={handleBuyCard}
                             disabled={
                               player.chips < getCardPrice(landedCard.value)
                             }
-                            className="flex-1 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 hover:from-green-600 hover:via-green-700 hover:to-emerald-700 text-white font-black py-3 px-4 rounded-xl shadow-xl transition-all hover:scale-105 active:scale-95 text-sm disabled:opacity-40 disabled:cursor-not-allowed border-2 border-green-400/50"
+                            className="flex-1 bg-gradient-to-r from-green-400 to-emerald-400 hover:from-green-500 hover:to-emerald-500 text-white font-semibold py-2 px-3 rounded-md shadow-md transition-all hover:scale-105 active:scale-95 text-xs disabled:opacity-30 disabled:cursor-not-allowed border border-green-300/50"
                           >
                             💰 Buy
                           </button>
                           <button
                             onClick={handleStartAuction}
-                            className="bg-gradient-to-r from-yellow-500 via-yellow-600 to-orange-500 hover:from-yellow-600 hover:via-yellow-700 hover:to-orange-600 text-white font-black py-3 px-5 rounded-xl shadow-xl transition-all hover:scale-105 active:scale-95 text-sm border-2 border-yellow-400/50"
+                            className="bg-gradient-to-r from-yellow-400 to-orange-400 hover:from-yellow-500 hover:to-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md transition-all hover:scale-105 active:scale-95 text-xs border border-yellow-300/50"
                           >
                             🔨
                           </button>
                         </div>
                       </div>
                     )}
-                    {/* Replace the cards display section (around line 1100+) with this: */}
+
                     {!landedCard && (
-                      <div className="h-[340px] bg-gradient-to-br from-black/20 to-black/10 rounded-xl border-2 border-white/10 p-3 flex flex-col m-2 shadow-inner">
-                        <div className="text-white/90 text-xs font-black mb-3 uppercase tracking-wider flex items-center gap-2 flex-shrink-0 drop-shadow">
+                      <div className="h-[300px] bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-2 flex flex-col m-1 shadow-sm">
+                        <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-1 flex-shrink-0 drop-shadow">
                           <span>🃏</span>
                           <span>{player.boughtCards.length} Cards</span>
                         </div>
-
-                        <div className="flex-1 overflow-y-auto px-[20px] pb-[20px] custom-scrollbar">
-                          {/* Only show cards if this is the current user's profile */}
+                        <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
                           {roomPlayers[index]?.user_id === currentUserId ? (
-                            // Show actual cards for current user
                             player.boughtCards.length > 0 ? (
-                              <div className="flex flex-wrap justify-center gap-2 min-h-full">
+                              <div className="flex flex-wrap gap-1">
                                 {player.boughtCards.map((card, cardIdx) => (
                                   <div
                                     key={cardIdx}
-                                    className="rounded-lg border-3 shadow-xl w-11 h-16 flex flex-col items-center justify-center bg-white p-1 flex-shrink-0 hover:scale-110 transition-transform"
+                                    className="rounded border shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
                                     style={{
                                       borderColor: getSuitColor(card.suit),
                                     }}
                                   >
                                     <div
-                                      className="text-xs font-black leading-tight"
+                                      className="text-[9px] font-semibold leading-none"
                                       style={{ color: getSuitColor(card.suit) }}
                                     >
                                       {card.value}
                                     </div>
                                     <div
-                                      className="text-lg leading-tight mt-0.5"
+                                      className="text-xs leading-none mt-0.5"
                                       style={{ color: getSuitColor(card.suit) }}
                                     >
                                       {card.suit}
@@ -2017,29 +2413,26 @@ function App() {
                                 ))}
                               </div>
                             ) : (
-                              <div className="flex items-center justify-center h-full text-white/50 text-sm font-semibold">
+                              <div className="flex items-center justify-center h-full text-white/40 text-xs font-medium">
                                 <span>📭 No cards yet</span>
                               </div>
                             )
-                          ) : // Show card backs for other players
-                          player.boughtCards.length > 0 ? (
-                            <div className="flex flex-wrap justify-center gap-2 min-h-full">
+                          ) : player.boughtCards.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
                               {player.boughtCards.map((card, cardIdx) => (
                                 <div
                                   key={cardIdx}
-                                  className="rounded-lg border-3 shadow-xl w-11 h-16 flex flex-col items-center justify-center p-1 flex-shrink-0 hover:scale-110 transition-transform"
+                                  className="rounded border shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600"
                                   style={{
-                                    background:
-                                      "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                                     borderColor: player.color,
                                   }}
                                 >
-                                  <div className="text-white text-2xl">🂠</div>
+                                  <div className="text-white text-xs">🂠</div>
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <div className="flex items-center justify-center h-full text-white/50 text-sm font-semibold">
+                            <div className="flex items-center justify-center h-full text-white/40 text-xs font-medium">
                               <span>📭 No cards yet</span>
                             </div>
                           )}
@@ -2053,6 +2446,105 @@ function App() {
           })}
         </div>
       </div>
+      {showMysteryCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 rounded-3xl p-8 border-4 border-yellow-400 shadow-2xl max-w-md w-full mx-4 transform animate-bounce">
+            <div className="text-center space-y-6">
+              <div className="text-7xl mb-4">
+                {showMysteryCard.icon ||
+                  (showMysteryCard.deck === "Joker"
+                    ? "🃏"
+                    : showMysteryCard.deck === "Bomb"
+                      ? "💣"
+                      : "❓")}
+              </div>
+              <h2 className="text-4xl font-black text-yellow-400 mb-2">
+                {showMysteryCard.name ||
+                  showMysteryCard.title ||
+                  "Unknown Card"}
+              </h2>
+              <p className="text-white text-lg font-semibold">
+                {showMysteryCard.description ||
+                  showMysteryCard.text ||
+                  "No description available"}
+              </p>
+              <div className="bg-white/10 rounded-xl p-4 border-2 border-white/20">
+                {showMysteryCard.effects.cb && (
+                  <div
+                    className={`text-2xl font-black ${
+                      showMysteryCard.effects.cb > 0
+                        ? "text-green-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {showMysteryCard.effects.cb > 0 ? "+" : ""}
+                    {showMysteryCard.effects.cb} Chips
+                  </div>
+                )}
+                {showMysteryCard.effects.mb && (
+                  <div className="text-2xl font-black text-blue-400">
+                    Move {showMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
+                    {Math.abs(showMysteryCard.effects.mb)} spaces
+                  </div>
+                )}
+                {showMysteryCard.effects.mt && (
+                  <div className="text-2xl font-black text-blue-400">
+                    Move to {showMysteryCard.effects.mt}
+                  </div>
+                )}
+                {showMysteryCard.effects.dr && (
+                  <div className="text-2xl font-black text-yellow-400">
+                    Draw {showMysteryCard.effects.dr} card
+                    {showMysteryCard.effects.dr > 1 ? "s" : ""}
+                  </div>
+                )}
+                {showMysteryCard.effects.sk && (
+                  <div className="text-2xl font-black text-red-400">
+                    Skip {showMysteryCard.effects.sk} turn
+                    {showMysteryCard.effects.sk > 1 ? "s" : ""}
+                  </div>
+                )}
+                {showMysteryCard.effects.rt && (
+                  <div className="text-2xl font-black text-green-400">
+                    Repeat your turn
+                  </div>
+                )}
+                {showMysteryCard.effects.ce && (
+                  <div
+                    className={`text-2xl font-black ${
+                      showMysteryCard.effects.ce > 0
+                        ? "text-green-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {showMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
+                    {Math.abs(showMysteryCard.effects.ce)} from each player
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  log(
+                    "✅",
+                    "Mystery card modal closed manually",
+                    JSON.stringify(showMysteryCard, null, 2)
+                  );
+                  setShowMysteryCard(null);
+                  setHasRolledThisTurn(false);
+                  const nextIndex =
+                    (currentPlayerIndex + 1) % playersRef.current.length;
+                  setCurrentPlayerIndex(nextIndex);
+                  currentIndexRef.current = nextIndex;
+                  log("➡️", `AUTO NEXT TURN: Player ${nextIndex}`);
+                }}
+                className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODALS */}
       {penaltyInfo && (
@@ -2096,23 +2588,6 @@ function App() {
         />
       )}
       {showRules && <RulesPanel onClose={() => setShowRules(false)} />}
-
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(0, 0, 0, 0.2);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.5);
-        }
-      `}</style>
     </div>
   );
 }

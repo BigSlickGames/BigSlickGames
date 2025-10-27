@@ -4,16 +4,16 @@ interface Card {
 }
 
 export type PokerHand =
-  | 'Royal Flush'
-  | 'Straight Flush'
-  | 'Four of a Kind'
-  | 'Full House'
-  | 'Flush'
-  | 'Straight'
-  | 'Three of a Kind'
-  | 'Two Pair'
-  | 'Pair'
-  | 'High Card';
+  | "Royal Flush"
+  | "Straight Flush"
+  | "Four of a Kind"
+  | "Full House"
+  | "Flush"
+  | "Straight"
+  | "Three of a Kind"
+  | "Two Pair"
+  | "Pair"
+  | "High Card";
 
 export interface HandResult {
   hand: PokerHand;
@@ -23,10 +23,10 @@ export interface HandResult {
 }
 
 const getCardNumericValue = (value: string): number => {
-  if (value === 'A') return 14;
-  if (value === 'K') return 13;
-  if (value === 'Q') return 12;
-  if (value === 'J') return 11;
+  if (value === "A") return 14;
+  if (value === "K") return 13;
+  if (value === "Q") return 12;
+  if (value === "J") return 11;
   return parseInt(value);
 };
 
@@ -36,36 +36,56 @@ const normalizeValue = (value: string): string => {
 
 export const getCardPrice = (value: string): number => {
   const priceMap: { [key: string]: number } = {
-    '2': 200,
-    '3': 300,
-    '4': 400,
-    '5': 500,
-    '6': 600,
-    '7': 700,
-    '8': 800,
-    '9': 900,
-    '10': 1000,
-    'J': 1100,
-    'Q': 1200,
-    'K': 1300,
-    'A': 1400
+    "2": 200,
+    "3": 300,
+    "4": 400,
+    "5": 500,
+    "6": 600,
+    "7": 700,
+    "8": 800,
+    "9": 900,
+    "10": 1000,
+    J: 1100,
+    Q: 1200,
+    K: 1300,
+    A: 1400,
   };
   return priceMap[value] || 0;
 };
 
 export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
-  const validCards = cards.filter((card): card is Card => card !== null && card.suit !== '' && card.value !== '');
+  // ✅ FIX 1: Add defensive check for undefined/null/empty cards
+  console.log("🔍 detectPokerHand called with:", cards);
 
-  if (validCards.length === 0) return null;
+  if (!cards || cards.length === 0) {
+    console.log("⚠️ No cards provided, returning High Card");
+    return {
+      hand: "High Card",
+      cards: [],
+      multiplier: 0.33,
+    };
+  }
 
-  const sortedCards = [...validCards].sort((a, b) =>
-    getCardNumericValue(b.value) - getCardNumericValue(a.value)
+  const validCards = cards.filter(
+    (card): card is Card =>
+      card !== null && card.suit !== "" && card.value !== ""
+  );
+
+  console.log("✅ Valid cards after filtering:", validCards.length);
+
+  if (validCards.length === 0) {
+    console.log("⚠️ No valid cards, returning null");
+    return null;
+  }
+
+  const sortedCards = [...validCards].sort(
+    (a, b) => getCardNumericValue(b.value) - getCardNumericValue(a.value)
   );
 
   const valueCounts: { [key: string]: Card[] } = {};
   const suitCounts: { [key: string]: Card[] } = {};
 
-  sortedCards.forEach(card => {
+  sortedCards.forEach((card) => {
     const normalizedValue = card.value.toUpperCase();
     if (!valueCounts[normalizedValue]) valueCounts[normalizedValue] = [];
     valueCounts[normalizedValue].push(card);
@@ -74,63 +94,99 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
     suitCounts[card.suit].push(card);
   });
 
-  const isFlush = Object.values(suitCounts).some(cards => cards.length >= 5);
+  const isFlush = Object.values(suitCounts).some((cards) => cards.length >= 5);
   const isStraight = checkStraight(sortedCards);
 
+  // Royal Flush & Straight Flush
   if (isFlush && isStraight) {
-    const flushCards = Object.values(suitCounts).find(cards => cards.length >= 5)!;
+    const flushCards = Object.values(suitCounts).find(
+      (cards) => cards.length >= 5
+    )!;
     const straightInFlush = checkStraight(flushCards);
     if (straightInFlush) {
-      const values = flushCards.map(c => getCardNumericValue(c.value));
-      const isRoyal = values.includes(14) && values.includes(13) && values.includes(12) && values.includes(11) && values.includes(10);
+      const values = flushCards.map((c) => getCardNumericValue(c.value));
+      const isRoyal =
+        values.includes(14) &&
+        values.includes(13) &&
+        values.includes(12) &&
+        values.includes(11) &&
+        values.includes(10);
       if (isRoyal) {
-        return { hand: 'Royal Flush', cards: flushCards.slice(0, 5), multiplier: 8 };
+        console.log("🎰 ROYAL FLUSH DETECTED!");
+        return {
+          hand: "Royal Flush",
+          cards: flushCards.slice(0, 5),
+          multiplier: 8,
+        };
       }
-      return { hand: 'Straight Flush', cards: flushCards.slice(0, 5), multiplier: 6 };
+      console.log("🎰 STRAIGHT FLUSH DETECTED!");
+      return {
+        hand: "Straight Flush",
+        cards: flushCards.slice(0, 5),
+        multiplier: 6,
+      };
     }
   }
 
   const valueCountsArray = Object.values(valueCounts);
-  const hasFour = valueCountsArray.find(cards => cards.length === 4);
+  const hasFour = valueCountsArray.find((cards) => cards.length === 4);
   if (hasFour) {
-    return { hand: 'Four of a Kind', cards: hasFour, multiplier: 5 };
+    console.log("🎰 FOUR OF A KIND DETECTED!");
+    return { hand: "Four of a Kind", cards: hasFour, multiplier: 5 };
   }
 
-  const hasThree = valueCountsArray.find(cards => cards.length === 3);
-  const hasPair = valueCountsArray.find(cards => cards.length === 2);
+  const hasThree = valueCountsArray.find((cards) => cards.length === 3);
+  const hasPair = valueCountsArray.find((cards) => cards.length === 2);
   if (hasThree && hasPair) {
-    return { hand: 'Full House', cards: [...hasThree, ...hasPair], multiplier: 4 };
+    console.log("🎰 FULL HOUSE DETECTED!");
+    return {
+      hand: "Full House",
+      cards: [...hasThree, ...hasPair],
+      multiplier: 4,
+    };
   }
 
   if (isFlush) {
-    const flushCards = Object.values(suitCounts).find(cards => cards.length >= 5)!;
-    return { hand: 'Flush', cards: flushCards.slice(0, 5), multiplier: 3 };
+    const flushCards = Object.values(suitCounts).find(
+      (cards) => cards.length >= 5
+    )!;
+    console.log("🎰 FLUSH DETECTED!");
+    return { hand: "Flush", cards: flushCards.slice(0, 5), multiplier: 3 };
   }
 
   if (isStraight) {
-    return { hand: 'Straight', cards: sortedCards.slice(0, 5), multiplier: 3 };
+    console.log("🎰 STRAIGHT DETECTED!");
+    return { hand: "Straight", cards: sortedCards.slice(0, 5), multiplier: 3 };
   }
 
   if (hasThree) {
-    return { hand: 'Three of a Kind', cards: hasThree, multiplier: 2.5 };
+    console.log("🎰 THREE OF A KIND DETECTED!");
+    return { hand: "Three of a Kind", cards: hasThree, multiplier: 2.5 };
   }
 
-  const pairs = valueCountsArray.filter(cards => cards.length === 2);
+  const pairs = valueCountsArray.filter((cards) => cards.length === 2);
   if (pairs.length >= 2) {
-    return { hand: 'Two Pair', cards: [...pairs[0], ...pairs[1]], multiplier: 2 };
+    console.log("🎰 TWO PAIR DETECTED!");
+    return {
+      hand: "Two Pair",
+      cards: [...pairs[0], ...pairs[1]],
+      multiplier: 2,
+    };
   }
 
   if (hasPair) {
-    return { hand: 'Pair', cards: hasPair, multiplier: 1.5 };
+    console.log("🎰 PAIR DETECTED!");
+    return { hand: "Pair", cards: hasPair, multiplier: 1.5 };
   }
 
-  return { hand: 'High Card', cards: [sortedCards[0]], multiplier: 0.33 };
+  console.log("🎰 HIGH CARD");
+  return { hand: "High Card", cards: [sortedCards[0]], multiplier: 0.33 };
 };
 
 const checkStraight = (cards: Card[]): boolean => {
   if (cards.length < 5) return false;
 
-  const values = cards.map(c => getCardNumericValue(c.value));
+  const values = cards.map((c) => getCardNumericValue(c.value));
   const uniqueValues = Array.from(new Set(values)).sort((a, b) => b - a);
 
   for (let i = 0; i <= uniqueValues.length - 5; i++) {
@@ -144,8 +200,14 @@ const checkStraight = (cards: Card[]): boolean => {
     if (consecutive) return true;
   }
 
-  if (uniqueValues.includes(14) && uniqueValues.includes(5) && uniqueValues.includes(4) &&
-      uniqueValues.includes(3) && uniqueValues.includes(2)) {
+  // Check for A-2-3-4-5 straight
+  if (
+    uniqueValues.includes(14) &&
+    uniqueValues.includes(5) &&
+    uniqueValues.includes(4) &&
+    uniqueValues.includes(3) &&
+    uniqueValues.includes(2)
+  ) {
     return true;
   }
 
@@ -154,25 +216,25 @@ const checkStraight = (cards: Card[]): boolean => {
 
 const calculateRankFactor = (handResult: HandResult): number => {
   const { hand, cards } = handResult;
-  const ranks = cards.map(c => getCardNumericValue(c.value));
+  const ranks = cards.map((c) => getCardNumericValue(c.value));
 
   switch (hand) {
-    case 'Royal Flush':
+    case "Royal Flush":
       return 1;
 
-    case 'Pair':
-    case 'Three of a Kind':
-    case 'Four of a Kind':
+    case "Pair":
+    case "Three of a Kind":
+    case "Four of a Kind":
       return ranks[0] / 14;
 
-    case 'Two Pair': {
+    case "Two Pair": {
       const sum = ranks.reduce((a, b) => a + b, 0);
       return sum / ranks.length / 14;
     }
 
-    case 'Full House': {
+    case "Full House": {
       const valueCounts: { [key: number]: number } = {};
-      ranks.forEach(r => {
+      ranks.forEach((r) => {
         valueCounts[r] = (valueCounts[r] || 0) + 1;
       });
 
@@ -184,14 +246,14 @@ const calculateRankFactor = (handResult: HandResult): number => {
         if (count === 2) pairRank = parseInt(rank);
       }
 
-      return ((3 * tripleRank + 2 * pairRank) / 5) / 14;
+      return (3 * tripleRank + 2 * pairRank) / 5 / 14;
     }
 
-    case 'Straight':
+    case "Straight":
       return Math.max(...ranks) / 14;
 
-    case 'Flush':
-    case 'Straight Flush': {
+    case "Flush":
+    case "Straight Flush": {
       const sum = ranks.reduce((a, b) => a + b, 0);
       return sum / ranks.length / 14;
     }
@@ -201,56 +263,92 @@ const calculateRankFactor = (handResult: HandResult): number => {
   }
 };
 
-export const calculatePenaltyForHand = (cards: Card[]): { handType: string; penalty: number } => {
-  const handResult = detectPokerHand(cards);
+export const calculatePenaltyForHand = (
+  cards: Card[]
+): { handType: string; penalty: number } => {
+  // ✅ FIX 2: Add defensive check for undefined/null/empty cards
+  console.log("💰 calculatePenaltyForHand called with:", cards);
 
-  if (!handResult || handResult.hand === 'High Card') {
-    return { handType: 'High Card', penalty: 0 };
+  if (!cards || cards.length === 0) {
+    console.log("⚠️ No cards for penalty calculation, returning 0");
+    return { handType: "High Card", penalty: 0 };
   }
 
-  const sumOfCardValues = handResult.cards.reduce((sum, c) => sum + getCardPrice(c.value), 0);
+  const handResult = detectPokerHand(cards);
+
+  if (!handResult || handResult.hand === "High Card") {
+    console.log("⚠️ High Card detected, no penalty");
+    return { handType: "High Card", penalty: 0 };
+  }
+
+  const sumOfCardValues = handResult.cards.reduce(
+    (sum, c) => sum + getCardPrice(c.value),
+    0
+  );
   const baseRent = sumOfCardValues * 0.1;
   const rankFactor = calculateRankFactor(handResult);
   const penalty = Math.floor(baseRent * handResult.multiplier * rankFactor);
 
+  console.log(`💰 Penalty calculated: ${penalty} for ${handResult.hand}`);
+
   return {
     handType: handResult.hand,
-    penalty
+    penalty,
   };
 };
 
-export const calculatePenalty = (card: Card, ownerCards: (Card | null)[]): { penalty: number; hand: PokerHand | null } => {
+export const calculatePenalty = (
+  card: Card,
+  ownerCards: (Card | null)[]
+): { penalty: number; hand: PokerHand | null } => {
+  // ✅ FIX 3: Add defensive check for undefined/null/empty ownerCards
+  console.log("💸 calculatePenalty called");
+  console.log("💸 Card:", card);
+  console.log("💸 Owner cards:", ownerCards);
+
+  if (!ownerCards || ownerCards.length === 0) {
+    const basePrice = getCardPrice(card.value);
+    const basePenalty = Math.floor(basePrice * 0.25);
+    console.log(`⚠️ No owner cards, using base penalty: ${basePenalty}`);
+    return { penalty: basePenalty, hand: null };
+  }
+
   const handResult = detectPokerHand(ownerCards);
   const basePrice = getCardPrice(card.value);
 
-  if (!handResult || handResult.hand === 'High Card') {
-    return { penalty: Math.floor(basePrice * 0.25), hand: null };
+  if (!handResult || handResult.hand === "High Card") {
+    const basePenalty = Math.floor(basePrice * 0.25);
+    console.log(`💸 High Card, base penalty: ${basePenalty}`);
+    return { penalty: basePenalty, hand: null };
   }
 
   const isPartOfHand = handResult.cards.some(
-    hCard => hCard.suit === card.suit && hCard.value === card.value
+    (hCard) => hCard.suit === card.suit && hCard.value === card.value
   );
 
   if (isPartOfHand) {
     const result = calculatePenaltyForHand(handResult.cards);
+    console.log(`💸 Card is part of hand, penalty: ${result.penalty}`);
     return { penalty: result.penalty, hand: handResult.hand };
   }
 
-  return { penalty: Math.floor(basePrice * 0.25), hand: null };
+  const basePenalty = Math.floor(basePrice * 0.25);
+  console.log(`💸 Card not part of hand, base penalty: ${basePenalty}`);
+  return { penalty: basePenalty, hand: null };
 };
 
 export const getHandDescription = (hand: PokerHand): string => {
   const descriptions: { [key in PokerHand]: string } = {
-    'Royal Flush': '8x multiplier - A, K, Q, J, 10 of same suit',
-    'Straight Flush': '6x multiplier - 5 consecutive cards of same suit',
-    'Four of a Kind': '5x multiplier - 4 cards of same value',
-    'Full House': '4x multiplier - 3 of a kind + pair',
-    'Flush': '3x multiplier - 5 cards of same suit',
-    'Straight': '3x multiplier - 5 consecutive cards',
-    'Three of a Kind': '2.5x multiplier - 3 cards of same value',
-    'Two Pair': '2x multiplier - 2 pairs of cards',
-    'Pair': '1.5x multiplier - 2 cards of same value',
-    'High Card': 'No multiplier - No poker hand'
+    "Royal Flush": "8x multiplier - A, K, Q, J, 10 of same suit",
+    "Straight Flush": "6x multiplier - 5 consecutive cards of same suit",
+    "Four of a Kind": "5x multiplier - 4 cards of same value",
+    "Full House": "4x multiplier - 3 of a kind + pair",
+    Flush: "3x multiplier - 5 cards of same suit",
+    Straight: "3x multiplier - 5 consecutive cards",
+    "Three of a Kind": "2.5x multiplier - 3 cards of same value",
+    "Two Pair": "2x multiplier - 2 pairs of cards",
+    Pair: "1.5x multiplier - 2 cards of same value",
+    "High Card": "No multiplier - No poker hand",
   };
   return descriptions[hand];
 };
