@@ -1203,7 +1203,7 @@ function LocalGame() {
     <div
       className="w-screen h-screen flex items-center justify-center overflow-hidden"
       style={{
-        backgroundImage: "url(/background.png)",
+        backgroundImage: "url(/games/pokeropoly/images/background.png)",
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}

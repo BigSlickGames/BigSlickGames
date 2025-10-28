@@ -8,21 +8,21 @@
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
-  
+
   body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  
+
   /* Improve touch targets on mobile */
-  button, 
-  [role="button"], 
-  input[type="submit"], 
+  button,
+  [role="button"],
+  input[type="submit"],
   input[type="button"] {
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   /* Better focus states for accessibility */
   button:focus-visible,
   input:focus-visible,
@@ -43,7 +43,7 @@
     -ms-user-select: none;
     user-select: none;
   }
-  
+
   /* Smooth scrolling for better mobile experience */
   .smooth-scroll {
     scroll-behavior: smooth;
@@ -103,11 +103,11 @@
 
 /* Hide scrollbars but keep functionality */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+  scrollbar-width: none; /* Firefox */
 }
-.scrollbar-hide::-webkit-scrollbar { 
-  display: none;  /* Safari and Chrome */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
 }
 
 /* Mobile-optimized scrollbars */
@@ -115,16 +115,16 @@
   .scrollbar-hide {
     scrollbar-width: thin;
   }
-  
+
   .scrollbar-hide::-webkit-scrollbar {
     width: 2px;
     display: block;
   }
-  
+
   .scrollbar-hide::-webkit-scrollbar-track {
     background: rgba(75, 85, 99, 0.3);
   }
-  
+
   .scrollbar-hide::-webkit-scrollbar-thumb {
     background: rgba(249, 115, 22, 0.5);
     border-radius: 1px;
@@ -136,11 +136,11 @@
   .text-responsive {
     font-size: clamp(0.875rem, 2.5vw, 1rem);
   }
-  
+
   .text-responsive-lg {
     font-size: clamp(1.125rem, 4vw, 1.5rem);
   }
-  
+
   .text-responsive-xl {
     font-size: clamp(1.5rem, 5vw, 2rem);
   }
@@ -280,16 +280,37 @@
 
 /* Screen shake effect */
 @keyframes screenShake {
-  0%, 100% { transform: translateX(0); }
-  10% { transform: translateX(-2px) translateY(1px); }
-  20% { transform: translateX(2px) translateY(-1px); }
-  30% { transform: translateX(-1px) translateY(2px); }
-  40% { transform: translateX(1px) translateY(-2px); }
-  50% { transform: translateX(-2px) translateY(1px); }
-  60% { transform: translateX(2px) translateY(-1px); }
-  70% { transform: translateX(-1px) translateY(2px); }
-  80% { transform: translateX(1px) translateY(-1px); }
-  90% { transform: translateX(-1px) translateY(1px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  10% {
+    transform: translateX(-2px) translateY(1px);
+  }
+  20% {
+    transform: translateX(2px) translateY(-1px);
+  }
+  30% {
+    transform: translateX(-1px) translateY(2px);
+  }
+  40% {
+    transform: translateX(1px) translateY(-2px);
+  }
+  50% {
+    transform: translateX(-2px) translateY(1px);
+  }
+  60% {
+    transform: translateX(2px) translateY(-1px);
+  }
+  70% {
+    transform: translateX(-1px) translateY(2px);
+  }
+  80% {
+    transform: translateX(1px) translateY(-1px);
+  }
+  90% {
+    transform: translateX(-1px) translateY(1px);
+  }
 }
 
 /* Enhanced game card entrance */
@@ -345,10 +366,97 @@
   .animate-bounce {
     animation: none;
   }
-  
+
   .transition-all,
   .transition-colors,
   .transition-transform {
     transition: none;
   }
+}
+
+@layer utilities {
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(10px, -20px);
+  }
+  50% {
+    transform: translate(-15px, 10px);
+  }
+  75% {
+    transform: translate(20px, 15px);
+  }
+}
+
+@keyframes cardFall {
+  0% {
+    transform: translateY(-1000px) rotateZ(-20deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(30px) rotateZ(5deg);
+    opacity: 1;
+  }
+  80% {
+    transform: translateY(-10px) rotateZ(-2deg);
+  }
+  100% {
+    transform: translateY(0) rotateZ(0);
+    opacity: 1;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 20% 30%,
+      rgba(255, 140, 0, 0.3) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 80% 60%,
+      rgba(255, 85, 0, 0.25) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 40% 80%,
+      rgba(255, 165, 0, 0.2) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 60% 20%,
+      rgba(255, 100, 0, 0.15) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 90% 85%,
+      rgba(255, 120, 0, 0.2) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 10% 70%,
+      rgba(255, 150, 0, 0.18) 0%,
+      transparent 50%
+    ),
+    #000000;
+  background-attachment: fixed;
 }

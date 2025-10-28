@@ -1509,6 +1509,112 @@ function App() {
     };
   };
 
+  const handleDeal = () => {
+    console.log("handleDeal: Starting card deal");
+    const suits = ["♠", "♥", "♦", "♣"];
+    const values = [
+      "A",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "J",
+      "Q",
+      "K",
+    ];
+
+    const fullDeck: { suit: string; value: string }[] = [];
+    suits.forEach((suit) => {
+      values.forEach((value) => {
+        fullDeck.push({ suit, value });
+      });
+    });
+
+    console.log("handleDeal: Created full deck", { deckSize: fullDeck.length });
+
+    for (let i = fullDeck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [fullDeck[i], fullDeck[j]] = [fullDeck[j], fullDeck[i]];
+    }
+    console.log("handleDeal: Shuffled deck");
+
+    const newDealtCards: { [key: number]: { suit: string; value: string } } =
+      {};
+    let deckIndex = 0;
+
+    for (let i = 0; i < totalSpaces; i++) {
+      if (i === 0 || i === 16 || i === 32 || i === 48) {
+        console.log("handleDeal: Skipping corner position", { position: i });
+        continue;
+      }
+
+      if (QUESTION_MARK_POSITIONS.includes(i)) {
+        console.log("handleDeal: Skipping mystery card position", {
+          position: i,
+        });
+        continue;
+      }
+
+      newDealtCards[i] = fullDeck[deckIndex];
+      console.log("handleDeal: Assigned card to position", {
+        position: i,
+        card: newDealtCards[i],
+      });
+      deckIndex++;
+    }
+
+    setDealtCards(newDealtCards);
+    console.log("handleDeal: Set dealtCards", { dealtCards: newDealtCards });
+
+    // Assign random mystery cards to question mark positions
+    const newMysteryCards: { [key: number]: MysteryCard } = {};
+    QUESTION_MARK_POSITIONS.forEach((pos) => {
+      newMysteryCards[pos] = getRandomMysteryCard();
+      console.log("handleDeal: Assigned mystery card to position", {
+        position: pos,
+        mysteryCard: newMysteryCards[pos],
+      });
+    });
+    setMysteryCardPositions(newMysteryCards);
+    console.log("handleDeal: Set mysteryCardPositions", { newMysteryCards });
+
+    // Select 2 random ? positions for joker hats (visual indicator)
+    const jokerPositionsInMystery = QUESTION_MARK_POSITIONS.filter(
+      (pos) => newMysteryCards[pos].type === "joker"
+    );
+    setJokerPositions(jokerPositionsInMystery);
+    console.log("handleDeal: Set jokerPositions", {
+      jokerPositions: jokerPositionsInMystery,
+    });
+
+    // Trigger card falling animations
+    const allCardIndices = Object.keys(newDealtCards).map(Number);
+    setCardsAnimating(new Set(allCardIndices));
+    setAnimationTrigger((prev) => prev + 1);
+    console.log("handleDeal: Triggered card animations", { allCardIndices });
+
+    // Clear animation state after all cards have fallen
+    setTimeout(() => {
+      setCardsAnimating(new Set());
+      console.log("handleDeal: Cleared card animations");
+    }, 2500);
+
+    if (!gameStarted) {
+      const randomPlayer = Math.floor(Math.random() * 4);
+      setCurrentPlayerIndex(randomPlayer);
+      setGameStarted(true);
+      console.log("handleDeal: Started game, set first player", {
+        randomPlayer,
+        gameStarted: true,
+      });
+    }
+  };
+
   const getCard = (index: number) => {
     if (index === 0 || index === 16 || index === 32 || index === 48) {
       const cornerSuits = ["♠", "♥", "♦", "♣"];
@@ -1905,6 +2011,20 @@ function App() {
         </div>
       </div> */}
 
+      {!gameStarted && (
+        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-10">
+          <button
+            onClick={() => {
+              console.log("Button: Dealing cards");
+              handleDeal();
+            }}
+            className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 px-8 rounded-lg shadow-2xl transition-all hover:scale-105 text-lg border-2 border-emerald-400"
+          >
+            Deal Cards
+          </button>
+        </div>
+      )}
+
       {/* 🎨 ENHANCED AUCTION BIDS PANEL */}
       {auctionInitiatorIndex ===
         roomPlayers.findIndex((p) => p.user_id === currentUserId) &&
@@ -2036,6 +2156,97 @@ function App() {
             height: "850px",
           }}
         >
+          {/* Board Background */}
+          <div
+            className="absolute inset-0 rounded-lg shadow-2xl overflow-hidden pointer-events-none"
+            style={{
+              transform: "translateZ(-5px)",
+              border: "20px solid #2a1810",
+              background: `
+                radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.4) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.4) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(236, 72, 153, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 90% 20%, rgba(34, 211, 238, 0.3) 0%, transparent 50%),
+                linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #0f172a 50%, #334155 75%, #1e293b 100%)
+              `,
+            }}
+          >
+            <div
+              className="absolute inset-0 opacity-30"
+              style={{
+                backgroundImage: `
+                  repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px),
+                  repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px)
+                `,
+              }}
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `
+                  radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)
+                `,
+              }}
+            />
+            <div
+              className="absolute top-8 left-8 w-32 h-32 rounded-full blur-3xl"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(34, 211, 238, 0.6) 0%, transparent 70%)",
+                animation: "float 8s ease-in-out infinite",
+              }}
+            />
+            <div
+              className="absolute bottom-12 right-12 w-40 h-40 rounded-full blur-3xl"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(168, 85, 247, 0.6) 0%, transparent 70%)",
+                animation: "float 10s ease-in-out infinite reverse",
+              }}
+            />
+            <div
+              className="absolute top-1/3 right-1/4 w-36 h-36 rounded-full blur-3xl"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(236, 72, 153, 0.5) 0%, transparent 70%)",
+                animation: "float 12s ease-in-out infinite",
+              }}
+            />
+            <div
+              className="absolute inset-20 rounded-lg backdrop-blur-sm border-2 pointer-events-none"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 50%, rgba(15, 23, 42, 0.6) 100%)",
+                borderColor: "rgba(251, 191, 36, 0.3)",
+                boxShadow: `
+                  inset 0 0 60px rgba(99, 102, 241, 0.1),
+                  inset 0 0 40px rgba(168, 85, 247, 0.1),
+                  0 0 80px rgba(0, 0, 0, 0.5)
+                `,
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div
+                  className="text-center"
+                  style={{
+                    textShadow: `
+                      0 0 20px rgba(99, 102, 241, 0.5),
+                      0 0 40px rgba(168, 85, 247, 0.3),
+                      0 4px 8px rgba(0, 0, 0, 0.8)
+                    `,
+                  }}
+                >
+                  <h1 className="text-8xl font-bold text-white mb-2 tracking-wider">
+                    POKER
+                  </h1>
+                  <h2 className="text-6xl font-bold text-yellow-400 tracking-wide">
+                    OPOLY
+                  </h2>
+                  <div className="mt-6 text-2xl text-white/80">♠ ♥ ♦ ♣</div>
+                </div>
+              </div>
+            </div>
+          </div>
           {Array.from({ length: totalSpaces }).map((_, index) => {
             const pos = getPropertyPosition(index);
             const card = getCard(index);
@@ -2192,19 +2403,28 @@ function App() {
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + baseRotation}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
             width: "850px",
             height: "850px",
           }}
         >
           {players.map((player, index) => {
             if (!player || !player.color) return null;
+            const numPlayers = players.length;
+            const angleStep = 360 / numPlayers;
+            const angle =
+              (index * angleStep - 90 + baseRotation) * (Math.PI / 180); // -90 to start from bottom
+            const radius = 250; // Distance from center (adjust as needed)
+            const depthOffset = index * 10; // Increase depth for each player to prevent overlap
 
+            // Calculate x, y positions in a circular layout
+            const posX = radius * Math.cos(angle);
+            const posY = radius * Math.sin(angle);
             const profilePositions = {
-              bottom: { x: 0, y: 220, rotateZ: 0 },
-              left: { x: -220, y: 0, rotateZ: 90 },
-              top: { x: 0, y: -220, rotateZ: 180 },
-              right: { x: 220, y: 0, rotateZ: 270 },
+              bottom: { x: 0, y: 230, rotateZ: 0 },
+              left: { x: -320, y: 0, rotateZ: 90 },
+              top: { x: 0, y: -320, rotateZ: 180 },
+              right: { x: 320, y: 0, rotateZ: 270 },
             };
             const pos = profilePositions[player.position];
             const playerRotationX =
@@ -2217,40 +2437,38 @@ function App() {
                 style={{
                   left: "50%",
                   top: "50%",
-                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) 
-                        rotateZ(${pos.rotateZ}deg) 
-                        rotateX(${playerRotationX}deg) 
-                        translateZ(15px)`, // Reduced depth for flatter look
+                  scale: "0.8",
+                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-30deg) translateZ(53px`, // Dynamic depth offset
                 }}
               >
                 <div
-                  className="rounded-lg border shadow-lg p-3 w-[240px] relative"
+                  className="rounded-xl border-2 shadow-2xl pt-6 p-4 w-240px relative"
                   style={{
-                    backgroundColor: `${player.color}CC`, // Slightly transparent for elegance
-                    borderColor: player.color,
+                    backgroundColor: player.color,
+                    borderColor: `${player.color}`,
                     boxShadow:
                       currentPlayerIndex === index
-                        ? "0 0 15px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.3)" // Subtler glow
-                        : "0 2px 8px rgba(0, 0, 0, 0.2)", // Minimal shadow when not active
+                        ? "0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.4)"
+                        : undefined,
                   }}
                 >
                   {index === currentPlayerIndex && (
-                    <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-yellow-300 to-yellow-400 text-black font-bold text-xs px-4 py-1 rounded-full shadow-md border border-white/50 z-10">
-                      ⭐ YOUR TURN
+                    <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
+                      CURRENT TURN
                     </div>
                   )}
 
-                  <div className="bg-gray-900/50 backdrop-blur-sm rounded-md p-2 mb-2">
-                    <div className="flex justify-between items-center mb-1">
+                  <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
+                    <div className="flex justify-between items-center mb-2">
                       <div className="flex items-center gap-2">
                         <h3
-                          className="text-white font-semibold text-base"
-                          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}
+                          className="text-white font-bold text-lg"
+                          style={{ textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}
                         >
                           {player.name}
                         </h3>
                         <span
-                          className="text-xl"
+                          className="text-2xl"
                           style={{
                             color: player.suit
                               ? "white"
@@ -2260,8 +2478,8 @@ function App() {
                           {player.suit}
                         </span>
                       </div>
-                      <div className="bg-black/30 backdrop-blur-sm px-2 py-1 rounded-md">
-                        <span className="text-yellow-300 font-semibold text-sm">
+                      <div className="bg-black/30 backdrop-blur-sm px-3 py-1 rounded-lg">
+                        <span className="text-yellow-400 font-bold text-sm">
                           ${player.chips.toLocaleString()}
                         </span>
                       </div>
@@ -2278,7 +2496,9 @@ function App() {
                     )}
                   </div>
 
-                  <div className="h-[300px] overflow-hidden flex flex-col">
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center mb-2"></div>
+
                     {index === currentPlayerIndex &&
                       !landedCard &&
                       !isMoving &&
@@ -2287,7 +2507,7 @@ function App() {
                           {roomPlayers[currentPlayerIndex]?.user_id ===
                           currentUserId ? (
                             <>
-                              <div className="mb-3 flex-shrink-0">
+                              <div className="mb-3">
                                 <MiniSlotMachine
                                   onRollComplete={onRollComplete}
                                   isVisible={true}
@@ -2323,6 +2543,7 @@ function App() {
 
                     {index === currentPlayerIndex && landedCard && (
                       <div className="h-[300px] bg-gray-900/40 backdrop-blur-sm rounded-md border border-white/10 p-3 flex flex-col m-1 shadow-sm">
+                        {" "}
                         <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex-shrink-0 drop-shadow"></div>
                         <div className="flex items-center gap-3 mb-3 flex-shrink-0">
                           <div className="bg-white rounded-md shadow-md p-2 w-16 h-20 flex flex-col items-center justify-center gap-1 flex-shrink-0 border border-gray-200">
@@ -2380,7 +2601,7 @@ function App() {
                     )}
 
                     {!landedCard && (
-                      <div className="h-[300px] bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-2 flex flex-col m-1 shadow-sm">
+                      <div className="h-[100px] bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-2 flex flex-col m-1 shadow-sm">
                         <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-1 flex-shrink-0 drop-shadow">
                           <span>🃏</span>
                           <span>{player.boughtCards.length} Cards</span>
@@ -2388,11 +2609,11 @@ function App() {
                         <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
                           {roomPlayers[index]?.user_id === currentUserId ? (
                             player.boughtCards.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
                                 {player.boughtCards.map((card, cardIdx) => (
                                   <div
                                     key={cardIdx}
-                                    className="rounded border shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                    className="rounded border-2 shadow-sm w-7 h-10 flex flex-col items-center justify-center bg-white"
                                     style={{
                                       borderColor: getSuitColor(card.suit),
                                     }}
