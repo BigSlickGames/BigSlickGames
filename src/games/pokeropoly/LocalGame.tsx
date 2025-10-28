@@ -1717,19 +1717,9 @@ function LocalGame() {
                                   position: playerPositions[currentPlayerIndex],
                                 });
                               }}
-                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-bold py-3 px-4/5 rounded-lg shadow-xl transition-all hover:scale-105 text-xs"
+                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-bold py-3 px-6 rounded-lg shadow-xl transition-all hover:scale-105 text-sm"
                             >
                               Auction
-                            </button>
-                            <button
-                              onClick={() => {
-                                console.log("Button: Pass card clicked");
-                                setLandedCard(null);
-                                endTurn();
-                              }}
-                              className="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white font-bold py-3 px-4/5 rounded-lg shadow-xl transition-all hover:scale-105 text-xs"
-                            >
-                              Pass
                             </button>
                           </div>
                         </div>
