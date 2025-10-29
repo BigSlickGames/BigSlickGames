@@ -1,5 +1,6 @@
 export interface MysteryCard {
   id: string;
+  m;
   deck: "Mystery" | "Bomb" | "Joker";
   title: string;
   text: string;
@@ -1224,8 +1225,6 @@ export const BOMB_CARDS: MysteryCard[] = [
     effects: { rt: true },
   },
 ];
-
-// ===== JOKER CARD (WILD) =====
 export const JOKER_CARD: MysteryCard = {
   id: "JOKER",
   deck: "Joker",
@@ -1238,12 +1237,10 @@ export const JOKER_CARD: MysteryCard = {
   effects: {},
 };
 
-// Helper function to get all cards combined
 export const getAllMysteryCards = (): MysteryCard[] => {
   return [...MYSTERY_CARDS, ...BOMB_CARDS];
 };
 
-// Helper function to get random card (excluding joker)
 export const getRandomMysteryCard = (): MysteryCard => {
   const allCards = getAllMysteryCards();
   const card = allCards[Math.floor(Math.random() * allCards.length)];
@@ -1267,5 +1264,51 @@ export const getRandomMysteryCard = (): MysteryCard => {
   return card;
 };
 
-// Question mark positions on the board
 export const QUESTION_MARK_POSITIONS = [5, 11, 21, 27, 37, 43, 53, 59];
+
+// Store joker positions (generated once per game)
+let JOKER_POSITIONS: number[] = [];
+
+export const generateJokerPositions = (): number[] => {
+  const excludedPositions = [
+    0,
+    16,
+    32,
+    48, // corners (home bases)
+    ...QUESTION_MARK_POSITIONS, // existing mystery card positions
+  ];
+
+  // Get all positions that are NOT corners or mystery cards
+  const availablePositions = Array.from({ length: 64 }, (_, i) => i).filter(
+    (pos) => !excludedPositions.includes(pos)
+  );
+
+  // ✅ Shuffle the AVAILABLE positions and pick 2
+  const shuffled = [...availablePositions].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 2);
+};
+
+export const initializeJokerPositions = () => {
+  JOKER_POSITIONS = generateJokerPositions();
+  console.log(
+    "🃏 initializeJokerPositions: Generated positions:",
+    JOKER_POSITIONS
+  );
+  return JOKER_POSITIONS;
+};
+
+export const getJokerPositions = () => {
+  console.log("🔍 getJokerPositions: Current positions:", JOKER_POSITIONS);
+  return JOKER_POSITIONS;
+};
+
+export const isJokerPosition = (position: number): boolean => {
+  const isJoker = JOKER_POSITIONS.includes(position);
+  console.log(
+    `🎯 isJokerPosition(${position}):`,
+    isJoker,
+    "| All joker positions:",
+    JOKER_POSITIONS
+  );
+  return isJoker;
+};

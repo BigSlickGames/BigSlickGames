@@ -18,6 +18,9 @@ import {
   MysteryCard,
   getRandomMysteryCard,
   QUESTION_MARK_POSITIONS,
+  initializeJokerPositions,
+  getJokerPositions,
+  isJokerPosition,
 } from "./data/mysteryCards";
 
 import {
@@ -40,10 +43,12 @@ interface Player {
   boardPosition: number;
   suit: string;
   isEliminated: boolean;
-  wilds: number; // Number of active wilds
   wildCollectedAt: number[]; // Positions where wilds were collected
   lastBoardPosition: number; // Track for lap completion
   lapsCompleted: number; // Track full laps (0-based)
+  jokers: Array<{ collectedAtPosition: number }>;
+  wilds?: number;
+  wildStartPosition?: number;
 }
 
 function App() {
@@ -619,6 +624,42 @@ function App() {
           const owner = cardOwners[finalPosition];
           log("🎯", "LANDED ON", { finalPosition, card, owner });
 
+          // Check if landed on Joker position
+          if (isJokerPosition(finalPosition)) {
+            console.log(
+              "🃏 Player landed on Joker at position:",
+              finalPosition
+            );
+
+            setPlayers((prev) => {
+              const updated = [...prev];
+              updated[safeIndex] = {
+                ...updated[safeIndex],
+                wilds: (updated[safeIndex].wilds || 0) + 1,
+                wildCollectedAt: [
+                  ...(updated[safeIndex].wildCollectedAt || []),
+                  finalPosition,
+                ],
+              };
+              return updated;
+            });
+
+            // Show Joker modal
+            setShowMysteryCard(JOKER_CARD);
+
+            // Auto-close and end turn
+            setTimeout(() => {
+              setShowMysteryCard(null);
+              setHasRolledThisTurn(false);
+              const nextIndex = (safeIndex + 1) % playersRef.current.length;
+              setCurrentPlayerIndex(nextIndex);
+              currentIndexRef.current = nextIndex;
+            }, 3000);
+
+            return; // Don't process other tile logic
+          }
+
+          // CHECK FOR MYSTERY CARD (existing code continues here)
           // ✅ CHECK FOR MYSTERY CARD
           const mysteryCard = mysteryCardPositions[finalPosition];
 
@@ -1584,13 +1625,12 @@ function App() {
     console.log("handleDeal: Set mysteryCardPositions", { newMysteryCards });
 
     // Select 2 random ? positions for joker hats (visual indicator)
-    const jokerPositionsInMystery = QUESTION_MARK_POSITIONS.filter(
-      (pos) => newMysteryCards[pos].type === "joker"
+    const newJokerPositions = initializeJokerPositions();
+    setJokerPositions(newJokerPositions);
+    console.log(
+      "🃏 handleDeal: Joker positions initialized:",
+      newJokerPositions
     );
-    setJokerPositions(jokerPositionsInMystery);
-    console.log("handleDeal: Set jokerPositions", {
-      jokerPositions: jokerPositionsInMystery,
-    });
 
     // Trigger card falling animations
     const allCardIndices = Object.keys(newDealtCards).map(Number);
@@ -2311,6 +2351,26 @@ function App() {
                         ))}
                       </div>
                     )}
+                  </div>
+                ) : getJokerPositions().includes(index) ? (
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-yellow-600 overflow-hidden">
+                    <img
+                      src="/games/pokeropoly/images/wildcard.png"
+                      alt="Wild Card"
+                      className="w-full h-full object-cover"
+                      onError={(e) =>
+                        console.error(
+                          "❌ Wild card image failed to load at position:",
+                          index
+                        )
+                      }
+                      onLoad={() =>
+                        console.log(
+                          "✅ Wild card image loaded at position:",
+                          index
+                        )
+                      }
+                    />
                   </div>
                 ) : card.isQuestion ? (
                   <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-white to-gray-100 border-4 border-purple-500 overflow-visible shadow-xl rounded-lg">

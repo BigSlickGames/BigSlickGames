@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { PlayerProfile } from "./components/PlayerProfile";
 import { PlayerIcon } from "./components/PlayerIcon";
 import { PenaltyModal } from "./components/PenaltyModal";
-import { AuctionModal } from "./components/AuctionModal";
+import { AuctionModal } from "./components/AuctionModalLocal";
+
 import { SellCardsModal } from "./components/SellCardsModal";
 import { MiniSlotMachine } from "./components/MiniSlotMachine";
 import { RulesPanel } from "./components/RulesPanel";
@@ -20,6 +21,9 @@ import {
   MysteryCard,
   getRandomMysteryCard,
   QUESTION_MARK_POSITIONS,
+  initializeJokerPositions, // ADD THIS
+  getJokerPositions, // ADD THIS
+  isJokerPosition, // ADD THIS
 } from "./data/mysteryCards";
 
 interface Player {
@@ -32,10 +36,17 @@ interface Player {
   boardPosition: number;
   suit: string;
   jokers: Array<{ collectedAtPosition: number }>;
+  wilds?: number;
+  wildCollectedAt?: number[]; // Track all positions where wilds were collected
 }
 
 function LocalGame() {
   console.log("LocalGame: Component initialized");
+  const [jokerPositions, setJokerPositions] = useState<number[]>([]);
+  useEffect(() => {
+    console.log("🔍 jokerPositions state changed:", jokerPositions);
+  }, [jokerPositions]);
+  const [hasExtraTurn, setHasExtraTurn] = useState(false);
 
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -74,7 +85,6 @@ function LocalGame() {
   const [showRules, setShowRules] = useState(true);
   const [cardsAnimating, setCardsAnimating] = useState<Set<number>>(new Set());
   const [animationTrigger, setAnimationTrigger] = useState(0);
-  const [jokerPositions, setJokerPositions] = useState<number[]>([]);
 
   // Mystery card states
   const [mysteryCardPositions, setMysteryCardPositions] = useState<{
@@ -415,12 +425,12 @@ function LocalGame() {
     console.log("handleDeal: Set mysteryCardPositions", { newMysteryCards });
 
     // Select 2 random ? positions for joker hats (visual indicator)
-    const jokerPositionsInMystery = QUESTION_MARK_POSITIONS.filter(
-      (pos) => newMysteryCards[pos].type === "joker"
-    );
-    setJokerPositions(jokerPositionsInMystery);
-    console.log("handleDeal: Set jokerPositions", {
-      jokerPositions: jokerPositionsInMystery,
+    // Initialize joker positions at game start
+    const newJokerPositions = initializeJokerPositions();
+    setJokerPositions(newJokerPositions);
+    console.log("🃏 handleDeal: Joker positions set:", {
+      jokerPositions: newJokerPositions,
+      questionMarkPositions: QUESTION_MARK_POSITIONS,
     });
 
     // Trigger card falling animations
@@ -489,7 +499,10 @@ function LocalGame() {
       return;
     }
     setHasPair(isPair);
-    console.log("handleDrawFromShoe: Set hasPair", { hasPair: isPair });
+    setHasExtraTurn(isPair); // Store extra turn flag
+    console.log("handleDrawFromShoe: Set hasPair and hasExtraTurn", {
+      hasPair: isPair,
+    });
     handleMoveFromShoe(total);
     console.log("handleDrawFromShoe: Triggered movement", { total });
   };
@@ -505,172 +518,215 @@ function LocalGame() {
       finalPosition,
     });
 
-    switch (mysteryCard.type) {
-      case "joker":
-        console.log("handleMysteryCardEffect: Applying joker effect");
-        setPlayers((prev) => {
-          const newPlayers = [...prev];
-          newPlayers[playerIndex].jokers.push({
-            collectedAtPosition: finalPosition,
-          });
-          newPlayers[playerIndex].collectedCards.push({
-            suit: "🃏",
-            value: "Joker",
-          });
-          console.log("handleMysteryCardEffect: Added joker to player", {
-            playerIndex,
-            jokers: newPlayers[playerIndex].jokers,
-            collectedCards: newPlayers[playerIndex].collectedCards,
-          });
-          return newPlayers;
-        });
-        break;
+    const effects = mysteryCard.effects;
 
-      case "bomb":
-        console.log("handleMysteryCardEffect: Applying bomb effect");
-        setPlayers((prev) => {
-          const newPlayers = [...prev];
-          newPlayers[playerIndex].boughtCards.forEach((card) => {
-            delete cardOwners[card.position];
-          });
-          newPlayers[playerIndex].collectedCards = [];
-          newPlayers[playerIndex].boughtCards = [];
-          newPlayers[playerIndex].jokers = [];
-          console.log(
-            "handleMysteryCardEffect: Cleared player cards and jokers",
-            {
-              playerIndex,
-              cardOwners,
-            }
-          );
-          return newPlayers;
-        });
-        break;
-
-      case "gain_chips":
-        console.log("handleMysteryCardEffect: Applying gain_chips effect", {
-          value: mysteryCard.value,
-        });
-        setPlayers((prev) => {
-          const newPlayers = [...prev];
-          newPlayers[playerIndex].chips += mysteryCard.value || 0;
-          console.log("handleMysteryCardEffect: Updated chips", {
-            playerIndex,
-            chips: newPlayers[playerIndex].chips,
-          });
-          return newPlayers;
-        });
-        break;
-
-      case "lose_chips":
-        console.log("handleMysteryCardEffect: Applying lose_chips effect", {
-          value: mysteryCard.value,
-        });
-        setPlayers((prev) => {
-          const newPlayers = [...prev];
+    // Handle chip bonus/penalty (cb)
+    if (effects.cb !== undefined) {
+      console.log("handleMysteryCardEffect: Applying chip effect", {
+        value: effects.cb,
+      });
+      setPlayers((prev) => {
+        const newPlayers = [...prev];
+        if (effects.cb! > 0) {
+          newPlayers[playerIndex].chips += effects.cb!;
+        } else {
           newPlayers[playerIndex].chips = Math.max(
             0,
-            newPlayers[playerIndex].chips - (mysteryCard.value || 0)
-          );
-          console.log("handleMysteryCardEffect: Updated chips", {
-            playerIndex,
-            chips: newPlayers[playerIndex].chips,
-          });
-          return newPlayers;
-        });
-        break;
-
-      case "steal_card":
-        console.log("handleMysteryCardEffect: Applying steal_card effect");
-        const otherPlayers = players.filter(
-          (_, idx) => idx !== playerIndex && players[idx].boughtCards.length > 0
-        );
-        if (otherPlayers.length > 0) {
-          const randomPlayer =
-            otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-          const victimIndex = players.indexOf(randomPlayer);
-          const randomCardIndex = Math.floor(
-            Math.random() * randomPlayer.boughtCards.length
-          );
-          const stolenCard = randomPlayer.boughtCards[randomCardIndex];
-          console.log("handleMysteryCardEffect: Selected victim and card", {
-            victimIndex,
-            stolenCard,
-          });
-
-          setPlayers((prev) => {
-            const newPlayers = [...prev];
-            newPlayers[victimIndex].boughtCards.splice(randomCardIndex, 1);
-            const collectedIdx = newPlayers[
-              victimIndex
-            ].collectedCards.findIndex(
-              (c) =>
-                c && c.suit === stolenCard.suit && c.value === stolenCard.value
-            );
-            if (collectedIdx !== -1) {
-              newPlayers[victimIndex].collectedCards.splice(collectedIdx, 1);
-            }
-            newPlayers[playerIndex].boughtCards.push(stolenCard);
-            newPlayers[playerIndex].collectedCards.push({
-              suit: stolenCard.suit,
-              value: stolenCard.value,
-            });
-            console.log("handleMysteryCardEffect: Transferred card", {
-              victimIndex,
-              playerIndex,
-              stolenCard,
-            });
-            return newPlayers;
-          });
-
-          setCardOwners((prev) => ({
-            ...prev,
-            [stolenCard.position]: playerIndex,
-          }));
-          console.log("handleMysteryCardEffect: Updated cardOwners", {
-            position: stolenCard.position,
-            newOwner: playerIndex,
-          });
-        } else {
-          console.log(
-            "handleMysteryCardEffect: No players with cards to steal"
+            newPlayers[playerIndex].chips + effects.cb! // cb is already negative
           );
         }
-        break;
+        console.log("handleMysteryCardEffect: Updated chips", {
+          playerIndex,
+          chips: newPlayers[playerIndex].chips,
+        });
+        return newPlayers;
+      });
+    }
 
-      case "teleport":
-        console.log("handleMysteryCardEffect: Applying teleport effect");
-        const randomPosition = Math.floor(Math.random() * 64);
+    // Handle movement bonus/penalty (mb)
+    if (effects.mb !== undefined) {
+      console.log("handleMysteryCardEffect: Applying movement effect", {
+        value: effects.mb,
+      });
+      setPlayerPositions((prev) => {
+        const newPositions = [...prev];
+        const currentPos = newPositions[playerIndex];
+        const newPos = (currentPos + effects.mb! + 64) % 64; // +64 ensures positive modulo
+        newPositions[playerIndex] = newPos;
+        console.log("handleMysteryCardEffect: Moved player", {
+          playerIndex,
+          from: currentPos,
+          to: newPos,
+        });
+        return newPositions;
+      });
+    }
+
+    // Handle move to specific location (mt)
+    if (effects.mt !== undefined) {
+      console.log("handleMysteryCardEffect: Applying teleport effect", {
+        destination: effects.mt,
+      });
+      const homePositions: { [key: string]: number } = {
+        "Hearts Home": 16,
+        "Spades Home": 0,
+        "Diamonds Home": 32,
+        "Clubs Home": 48,
+      };
+
+      const targetPosition = homePositions[effects.mt];
+      if (targetPosition !== undefined) {
         setPlayerPositions((prev) => {
           const newPositions = [...prev];
-          newPositions[playerIndex] = randomPosition;
+          newPositions[playerIndex] = targetPosition;
           console.log("handleMysteryCardEffect: Teleported player", {
             playerIndex,
-            newPosition: randomPosition,
+            destination: effects.mt,
+            position: targetPosition,
           });
           return newPositions;
         });
-        break;
-
-      case "double_penalty":
-        console.log(
-          "handleMysteryCardEffect: Applying double_penalty effect (not implemented)"
-        );
-        break;
-
-      case "immunity":
-        console.log(
-          "handleMysteryCardEffect: Applying immunity effect (not implemented)"
-        );
-        break;
+      }
     }
 
+    // Handle draw cards (dr)
+    if (effects.dr !== undefined && effects.dr > 0) {
+      console.log("handleMysteryCardEffect: Applying draw cards effect", {
+        count: effects.dr,
+      });
+
+      // Get random cards from available positions
+      const availableCards = Object.entries(dealtCards)
+        .filter(([pos, card]) => cardOwners[parseInt(pos)] === undefined)
+        .map(([pos, card]) => ({ position: parseInt(pos), card }));
+
+      if (availableCards.length > 0) {
+        setPlayers((prev) => {
+          const newPlayers = [...prev];
+          const cardsToAdd = Math.min(effects.dr!, availableCards.length);
+
+          for (let i = 0; i < cardsToAdd; i++) {
+            const randomIndex = Math.floor(
+              Math.random() * availableCards.length
+            );
+            const { position, card } = availableCards[randomIndex];
+
+            newPlayers[playerIndex].collectedCards.push({ ...card });
+            newPlayers[playerIndex].boughtCards.push({
+              ...card,
+              position: position,
+            });
+
+            // Mark card as owned
+            setCardOwners((prevOwners) => ({
+              ...prevOwners,
+              [position]: playerIndex,
+            }));
+
+            // Remove from available cards
+            availableCards.splice(randomIndex, 1);
+          }
+
+          console.log("handleMysteryCardEffect: Drew cards", {
+            playerIndex,
+            count: cardsToAdd,
+          });
+          return newPlayers;
+        });
+      }
+    }
+
+    // Handle skip turns (sk)
+    if (effects.sk !== undefined && effects.sk > 0) {
+      console.log("handleMysteryCardEffect: Applying skip turn effect", {
+        turns: effects.sk,
+      });
+
+      // Skip turns by advancing currentPlayerIndex
+      let skipsRemaining = effects.sk;
+      const skipTurns = () => {
+        if (skipsRemaining > 0) {
+          setCurrentPlayerIndex((prev) => {
+            const nextIndex = (prev + 1) % 4;
+            console.log("handleMysteryCardEffect: Skipped turn", {
+              from: prev,
+              to: nextIndex,
+              remaining: skipsRemaining - 1,
+            });
+            skipsRemaining--;
+            if (skipsRemaining > 0) {
+              setTimeout(skipTurns, 100);
+            }
+            return nextIndex;
+          });
+        }
+      };
+      skipTurns();
+    }
+
+    // Handle repeat turn (rt)
+    if (effects.rt === true) {
+      console.log("handleMysteryCardEffect: Applying repeat turn effect");
+      setHasPair(true); // Use the pair mechanism to grant extra turn
+    }
+
+    // Handle collect/pay each player (ce)
+    if (effects.ce !== undefined && effects.ce !== 0) {
+      console.log("handleMysteryCardEffect: Applying collect/pay each player", {
+        amount: effects.ce,
+      });
+
+      setPlayers((prev) => {
+        const newPlayers = [...prev];
+
+        if (effects.ce! > 0) {
+          // Collect from each other player
+          for (let i = 0; i < newPlayers.length; i++) {
+            if (i !== playerIndex) {
+              const payment = Math.min(effects.ce!, newPlayers[i].chips);
+              newPlayers[i].chips -= payment;
+              newPlayers[playerIndex].chips += payment;
+            }
+          }
+        } else {
+          // Pay to each other player
+          const paymentPerPlayer = Math.abs(effects.ce!);
+          const totalPayment = paymentPerPlayer * 3; // 3 other players
+          const actualPayment = Math.min(
+            totalPayment,
+            newPlayers[playerIndex].chips
+          );
+          const perPlayer = Math.floor(actualPayment / 3);
+
+          newPlayers[playerIndex].chips -= actualPayment;
+          for (let i = 0; i < newPlayers.length; i++) {
+            if (i !== playerIndex) {
+              newPlayers[i].chips += perPlayer;
+            }
+          }
+        }
+
+        console.log("handleMysteryCardEffect: Updated all player chips", {
+          effect: effects.ce,
+        });
+        return newPlayers;
+      });
+    }
+
+    // Close modal and handle turn continuation
     setLandedMysteryCard(null);
     setShowMysteryCardModal(false);
     console.log("handleMysteryCardEffect: Cleared mystery card modal");
 
-    if (hasPair) {
-      console.log("handleMysteryCardEffect: Has pair, keeping turn");
+    // If repeat turn effect, keep turn; otherwise end turn
+    if (effects.rt === true) {
+      console.log("handleMysteryCardEffect: Repeat turn effect, keeping turn");
+      // Don't clear hasExtraTurn - they still get doubles bonus
+    } else if (hasExtraTurn) {
+      console.log(
+        "handleMysteryCardEffect: Player rolled doubles, keeping turn"
+      );
+      setHasExtraTurn(false);
       setHasPair(false);
     } else {
       console.log("handleMysteryCardEffect: Ending turn");
@@ -700,11 +756,13 @@ function LocalGame() {
             movesMade,
           });
 
-          // Check if player completed a lap and remove expired jokers
+          // Check if player completed a lap and remove expired jokers AND wilds
           if (newPosition < oldPosition) {
             console.log("handleMoveFromShoe: Player completed a lap");
             setPlayers((prevPlayers) => {
               const updatedPlayers = [...prevPlayers];
+
+              // Remove expired jokers
               updatedPlayers[playerIndex].jokers = updatedPlayers[
                 playerIndex
               ].jokers.filter((joker) => {
@@ -717,9 +775,43 @@ function LocalGame() {
                 });
                 return keep;
               });
-              console.log("handleMoveFromShoe: Updated jokers", {
+
+              // Remove expired wilds (after completing 1 full lap)
+              const wildPositions =
+                updatedPlayers[playerIndex].wildCollectedAt || [];
+              let wildsExpired = 0;
+
+              updatedPlayers[playerIndex].wildCollectedAt =
+                wildPositions.filter((wildPos) => {
+                  const keep = wildPos > oldPosition || wildPos <= newPosition;
+                  if (!keep) {
+                    wildsExpired++;
+                    console.log("🃏 Wild card expired at position:", wildPos);
+                  }
+                  return keep;
+                });
+
+              // Decrement wild count for expired wilds
+              if (wildsExpired > 0) {
+                updatedPlayers[playerIndex].wilds = Math.max(
+                  0,
+                  (updatedPlayers[playerIndex].wilds || 0) - wildsExpired
+                );
+                console.log(
+                  `🃏 ${wildsExpired} Wild card(s) expired for player ${playerIndex}`
+                );
+
+                // Show notification
+                setGameLog((prev) => [
+                  ...prev,
+                  `${updatedPlayers[playerIndex].name}'s ${wildsExpired} Wild Card(s) expired! 🃏`,
+                ]);
+              }
+
+              console.log("handleMoveFromShoe: Updated jokers and wilds", {
                 playerIndex,
                 jokers: updatedPlayers[playerIndex].jokers,
+                wilds: updatedPlayers[playerIndex].wilds,
               });
               return updatedPlayers;
             });
@@ -736,6 +828,38 @@ function LocalGame() {
 
         const finalPosition = (startPosition + total) % 64;
         console.log("handleMoveFromShoe: Final position", { finalPosition });
+
+        // Check if landed on Joker position
+        // Check if landed on Joker position
+        if (isJokerPosition(finalPosition)) {
+          console.log("🃏 Player landed on Joker!");
+
+          setPlayers((prevPlayers) => {
+            const updatedPlayers = [...prevPlayers];
+
+            // ✅ Add to wilds counter ONLY
+            updatedPlayers[playerIndex].wilds =
+              (updatedPlayers[playerIndex].wilds || 0) + 1;
+
+            // Track where wild was collected for expiration
+            if (!updatedPlayers[playerIndex].wildCollectedAt) {
+              updatedPlayers[playerIndex].wildCollectedAt = [];
+            }
+            updatedPlayers[playerIndex].wildCollectedAt!.push(finalPosition);
+
+            console.log("handleMoveFromShoe: Added wild to player", {
+              playerIndex,
+              wilds: updatedPlayers[playerIndex].wilds,
+              wildCollectedAt: updatedPlayers[playerIndex].wildCollectedAt,
+            });
+            return updatedPlayers;
+          });
+
+          // Show Joker modal
+          setLandedMysteryCard(JOKER_CARD);
+          setShowMysteryCardModal(true);
+          return;
+        }
 
         // Check if landed on mystery card
         if (QUESTION_MARK_POSITIONS.includes(finalPosition)) {
@@ -762,9 +886,14 @@ function LocalGame() {
           const ownerPlayer = players[owner];
           const { penalty, hand } = calculatePenalty(
             card,
-            ownerPlayer.collectedCards
+            ownerPlayer.collectedCards,
+            ownerPlayer.boughtCards,
+            ownerPlayer.wilds || 0 // Pass wilds to penalty calculation
           );
-          const handResult = detectPokerHand(ownerPlayer.collectedCards);
+          const handResult = detectPokerHand(
+            ownerPlayer.collectedCards,
+            ownerPlayer.wilds || 0 // Pass wilds to hand detection
+          );
           setPenaltyInfo({
             card,
             penalty,
@@ -782,8 +911,11 @@ function LocalGame() {
           console.log(
             "handleMoveFromShoe: No action required at this position"
           );
-          if (hasPair) {
-            console.log("handleMoveFromShoe: Has pair, keeping turn");
+          if (hasExtraTurn) {
+            console.log(
+              "handleMoveFromShoe: Player rolled doubles, keeping turn"
+            );
+            setHasExtraTurn(false);
             setHasPair(false);
           } else {
             console.log("handleMoveFromShoe: Ending turn");
@@ -854,9 +986,15 @@ function LocalGame() {
     });
 
     setLandedCard(null);
-    console.log("handleBuyCard: Cleared landedCard");
-    endTurn();
-    console.log("handleBuyCard: Ended turn");
+
+    if (hasExtraTurn) {
+      console.log("handleBuyCard: Player rolled doubles, keeping turn");
+      setHasExtraTurn(false);
+      setHasPair(false);
+    } else {
+      endTurn();
+      console.log("handleBuyCard: Ended turn");
+    }
   };
 
   const handleAuctionComplete = (winnerIndex: number, winningBid: number) => {
@@ -907,7 +1045,14 @@ function LocalGame() {
     setAuctionInfo(null);
     setLandedCard(null);
     console.log("handleAuctionComplete: Cleared auctionInfo and landedCard");
-    endTurn();
+    if (winnerIndex === currentPlayerIndex && hasExtraTurn) {
+      console.log("handleAuctionComplete: Player rolled doubles, keeping turn");
+      setHasExtraTurn(false);
+      setHasPair(false);
+    } else {
+      endTurn();
+      console.log("handleAuctionComplete: Ended turn");
+    }
     console.log("handleAuctionComplete: Ended turn");
   };
 
@@ -934,8 +1079,15 @@ function LocalGame() {
 
     setPenaltyInfo(null);
     console.log("handlePayPenalty: Cleared penaltyInfo");
-    endTurn();
-    console.log("handlePayPenalty: Ended turn");
+
+    if (hasExtraTurn) {
+      console.log("handlePayPenalty: Player rolled doubles, keeping turn");
+      setHasExtraTurn(false);
+      setHasPair(false);
+    } else {
+      endTurn();
+      console.log("handlePayPenalty: Ended turn");
+    }
   };
 
   const handleSellCards = (
@@ -1309,29 +1461,28 @@ function LocalGame() {
               transform: "translateZ(-5px)",
               border: "20px solid #2a1810",
               background: `
-                radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.4) 0%, transparent 50%),
-                radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.4) 0%, transparent 50%),
-                radial-gradient(circle at 40% 80%, rgba(236, 72, 153, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 90% 20%, rgba(34, 211, 238, 0.3) 0%, transparent 50%),
-                linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #0f172a 50%, #334155 75%, #1e293b 100%)
-              `,
+      radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 40% 80%, rgba(236, 72, 153, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 90% 20%, rgba(34, 211, 238, 0.3) 0%, transparent 50%),
+      linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #0f172a 50%, #334155 75%, #1e293b 100%)
+    `,
             }}
           >
             <div
               className="absolute inset-0 opacity-30"
               style={{
                 backgroundImage: `
-                  repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px),
-                  repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px)
-                `,
+        repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px),
+        repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(255,255,255,.03) 35px, rgba(255,255,255,.03) 70px)
+      `,
               }}
             />
             <div
               className="absolute inset-0"
               style={{
-                background: `
-                  radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)
-                `,
+                background:
+                  "radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)",
               }}
             />
             <div
@@ -1365,31 +1516,18 @@ function LocalGame() {
                   "linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 50%, rgba(15, 23, 42, 0.6) 100%)",
                 borderColor: "rgba(251, 191, 36, 0.3)",
                 boxShadow: `
-                  inset 0 0 60px rgba(99, 102, 241, 0.1),
-                  inset 0 0 40px rgba(168, 85, 247, 0.1),
-                  0 0 80px rgba(0, 0, 0, 0.5)
-                `,
+        inset 0 0 60px rgba(99, 102, 241, 0.1),
+        inset 0 0 40px rgba(168, 85, 247, 0.1),
+        0 0 80px rgba(0, 0, 0, 0.5)
+      `,
               }}
             >
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div
-                  className="text-center"
-                  style={{
-                    textShadow: `
-                      0 0 20px rgba(99, 102, 241, 0.5),
-                      0 0 40px rgba(168, 85, 247, 0.3),
-                      0 4px 8px rgba(0, 0, 0, 0.8)
-                    `,
-                  }}
-                >
-                  <h1 className="text-8xl font-bold text-white mb-2 tracking-wider">
-                    POKER
-                  </h1>
-                  <h2 className="text-6xl font-bold text-yellow-400 tracking-wide">
-                    OPOLY
-                  </h2>
-                  <div className="mt-6 text-2xl text-white/80">♠ ♥ ♦ ♣</div>
-                </div>
+                <img
+                  src="/games/pokeropoly/images/pokeropoly.png"
+                  alt="Pokeropoly"
+                  className="w-[500px] h-auto drop-shadow-[0_0_25px_rgba(168,85,247,0.4)]"
+                />
               </div>
             </div>
           </div>
@@ -1462,27 +1600,102 @@ function LocalGame() {
                       </div>
                     )}
                   </div>
-                ) : card.isQuestion ? (
-                  <div className="w-full h-full flex items-center justify-center relative bg-white border-4 border-purple-500 overflow-visible">
-                    {jokerPositions.includes(index) ? (
-                      <img
-                        src="/joker hat.png"
-                        alt="Joker"
-                        className="absolute object-contain"
-                        style={{
-                          width: `${jokerHatSize}%`,
-                          height: `${jokerHatSize}%`,
-                          top: `${jokerHatTopOffset}%`,
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          zIndex: jokerHatZIndex,
-                        }}
-                      />
-                    ) : (
-                      <div className="text-5xl font-bold text-purple-500">
-                        ?
-                      </div>
-                    )}
+                ) : getJokerPositions().includes(index) ? (
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-yellow-600 overflow-hidden">
+                    <img
+                      src="/games/pokeropoly/images/wildcard.png"
+                      alt="Wild Card"
+                      className="w-full h-full object-cover"
+                      onError={(e) =>
+                        console.error(
+                          "❌ Wild card image failed to load at position:",
+                          index
+                        )
+                      }
+                      onLoad={() =>
+                        console.log(
+                          "✅ Wild card image loaded at position:",
+                          index
+                        )
+                      }
+                    />
+                  </div>
+                ) : // Find this section in your render code where cards are displayed
+                card.isQuestion ? (
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-purple-600 to-purple-800 border-4 border-purple-500 overflow-hidden">
+                    {(() => {
+                      const isJoker = getJokerPositions().includes(index);
+                      const mysteryCard = mysteryCardPositions[index];
+
+                      console.log("🎯 Board tile render:", {
+                        index,
+                        isQuestion: card.isQuestion,
+                        jokerPositions: getJokerPositions(),
+                        isJokerPosition: isJoker,
+                        mysteryCard: mysteryCard?.deck,
+                      });
+
+                      // ✅ Show different images based on card type
+                      if (isJoker) {
+                        return (
+                          <img
+                            src="/games/pokeropoly/images/wildcard.png"
+                            alt="Wild Card"
+                            className="w-full h-full object-cover"
+                            onError={(e) =>
+                              console.error(
+                                "❌ Wild card image failed to load:",
+                                e
+                              )
+                            }
+                            onLoad={() =>
+                              console.log(
+                                "✅ Wild card image loaded at position:",
+                                index
+                              )
+                            }
+                          />
+                        );
+                      } else if (mysteryCard) {
+                        // Show image based on deck type
+                        const imagePath =
+                          mysteryCard.deck === "Bomb"
+                            ? "/games/pokeropoly/images/bomb.png"
+                            : "/games/pokeropoly/images/lightining.png"; // Note: your file is named "lightining.png"
+
+                        return (
+                          <img
+                            src={imagePath}
+                            alt={
+                              mysteryCard.deck === "Bomb"
+                                ? "Bomb Card"
+                                : "Mystery Card"
+                            }
+                            className="w-full h-full object-cover"
+                            onError={(e) =>
+                              console.error(
+                                `❌ ${mysteryCard.deck} image failed to load:`,
+                                e
+                              )
+                            }
+                            onLoad={() =>
+                              console.log(
+                                `✅ ${mysteryCard.deck} image loaded at position:`,
+                                index
+                              )
+                            }
+                          />
+                        );
+                      } else {
+                        // Fallback to question mark
+                        return (
+                          <div className="text-5xl font-bold text-purple-500 bg-white w-full h-full flex items-center justify-center">
+                            ?
+                          </div>
+                        );
+                      }
+                    })()}
+
                     {playersOnThisSpace.length > 0 && (
                       <div
                         className="absolute flex gap-0.5"
@@ -1633,9 +1846,10 @@ function LocalGame() {
                         </span>
                       </div>
                     </div>
-                    {player.jokers.length > 0 && (
-                      <div className="text-xs text-white/70">
-                        🃏 Jokers: {player.jokers.length}
+
+                    {player.wilds && player.wilds > 0 && (
+                      <div className="text-xs text-yellow-400 font-bold">
+                        🃏 Wild Cards Active
                       </div>
                     )}
                   </div>

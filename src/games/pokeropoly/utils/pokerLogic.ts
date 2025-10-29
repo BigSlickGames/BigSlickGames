@@ -23,6 +23,7 @@ export interface HandResult {
 }
 
 const getCardNumericValue = (value: string): number => {
+  if (value === "WILD") return 0; // Wilds have special handling
   if (value === "A") return 14;
   if (value === "K") return 13;
   if (value === "Q") return 12;
@@ -53,9 +54,14 @@ export const getCardPrice = (value: string): number => {
   return priceMap[value] || 0;
 };
 
-export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
-  // ✅ FIX 1: Add defensive check for undefined/null/empty cards
-  console.log("🔍 detectPokerHand called with:", cards);
+export const detectPokerHand = (
+  cards: (Card | null)[],
+  wilds: number = 0 // ADD WILDS PARAMETER
+): HandResult | null => {
+  console.log("🔍 detectPokerHand called with:", {
+    cards: cards.length,
+    wilds,
+  });
 
   if (!cards || cards.length === 0) {
     console.log("⚠️ No cards provided, returning High Card");
@@ -71,21 +77,36 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
       card !== null && card.suit !== "" && card.value !== ""
   );
 
-  console.log("✅ Valid cards after filtering:", validCards.length);
+  // ADD WILD CARDS TO THE HAND
+  const wildCards: Card[] = Array(wilds).fill({ suit: "WILD", value: "WILD" });
+  const allCards = [...validCards, ...wildCards];
 
-  if (validCards.length === 0) {
+  console.log("✅ Valid cards after filtering:", {
+    validCards: validCards.length,
+    wilds,
+    total: allCards.length,
+  });
+
+  if (allCards.length === 0) {
     console.log("⚠️ No valid cards, returning null");
     return null;
   }
 
-  const sortedCards = [...validCards].sort(
+  const sortedCards = [...allCards].sort(
     (a, b) => getCardNumericValue(b.value) - getCardNumericValue(a.value)
   );
 
   const valueCounts: { [key: string]: Card[] } = {};
   const suitCounts: { [key: string]: Card[] } = {};
+  let wildCount = 0;
 
   sortedCards.forEach((card) => {
+    // Count wilds separately
+    if (card.value === "WILD") {
+      wildCount++;
+      return;
+    }
+
     const normalizedValue = card.value.toUpperCase();
     if (!valueCounts[normalizedValue]) valueCounts[normalizedValue] = [];
     valueCounts[normalizedValue].push(card);
@@ -94,10 +115,55 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
     suitCounts[card.suit].push(card);
   });
 
-  const isFlush = Object.values(suitCounts).some((cards) => cards.length >= 5);
-  const isStraight = checkStraight(sortedCards);
+  // Use wilds to boost hand detection
+  const valueCountsArray = Object.values(valueCounts);
 
-  // Royal Flush & Straight Flush
+  // Four of a Kind (with wilds)
+  const bestThree = valueCountsArray.find((cards) => cards.length === 3);
+  if (bestThree && wildCount >= 1) {
+    console.log("🃏 FOUR OF A KIND WITH WILD!");
+    return {
+      hand: "Four of a Kind",
+      cards: [...bestThree, wildCards[0]],
+      multiplier: 5,
+    };
+  }
+
+  const hasFour = valueCountsArray.find((cards) => cards.length === 4);
+  if (hasFour) {
+    console.log("🎰 FOUR OF A KIND DETECTED!");
+    return { hand: "Four of a Kind", cards: hasFour, multiplier: 5 };
+  }
+
+  // Full House (with wilds)
+  const hasThree = valueCountsArray.find((cards) => cards.length === 3);
+  const hasPair = valueCountsArray.find((cards) => cards.length === 2);
+
+  if (hasThree && hasPair) {
+    console.log("🎰 FULL HOUSE DETECTED!");
+    return {
+      hand: "Full House",
+      cards: [...hasThree, ...hasPair],
+      multiplier: 4,
+    };
+  }
+
+  // Full House with wild
+  if (hasThree && wildCount >= 2) {
+    console.log("🃏 FULL HOUSE WITH WILDS!");
+    return {
+      hand: "Full House",
+      cards: [...hasThree, ...wildCards.slice(0, 2)],
+      multiplier: 4,
+    };
+  }
+
+  const isFlush = Object.values(suitCounts).some((cards) => cards.length >= 5);
+  const isStraight = checkStraight(
+    sortedCards.filter((c) => c.value !== "WILD")
+  );
+
+  // Flush & Straight checks
   if (isFlush && isStraight) {
     const flushCards = Object.values(suitCounts).find(
       (cards) => cards.length >= 5
@@ -128,24 +194,6 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
     }
   }
 
-  const valueCountsArray = Object.values(valueCounts);
-  const hasFour = valueCountsArray.find((cards) => cards.length === 4);
-  if (hasFour) {
-    console.log("🎰 FOUR OF A KIND DETECTED!");
-    return { hand: "Four of a Kind", cards: hasFour, multiplier: 5 };
-  }
-
-  const hasThree = valueCountsArray.find((cards) => cards.length === 3);
-  const hasPair = valueCountsArray.find((cards) => cards.length === 2);
-  if (hasThree && hasPair) {
-    console.log("🎰 FULL HOUSE DETECTED!");
-    return {
-      hand: "Full House",
-      cards: [...hasThree, ...hasPair],
-      multiplier: 4,
-    };
-  }
-
   if (isFlush) {
     const flushCards = Object.values(suitCounts).find(
       (cards) => cards.length >= 5
@@ -157,6 +205,16 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
   if (isStraight) {
     console.log("🎰 STRAIGHT DETECTED!");
     return { hand: "Straight", cards: sortedCards.slice(0, 5), multiplier: 3 };
+  }
+
+  // Three of a Kind (with wilds)
+  if (hasPair && wildCount >= 1) {
+    console.log("🃏 THREE OF A KIND WITH WILD!");
+    return {
+      hand: "Three of a Kind",
+      cards: [...hasPair, wildCards[0]],
+      multiplier: 2.5,
+    };
   }
 
   if (hasThree) {
@@ -171,6 +229,16 @@ export const detectPokerHand = (cards: (Card | null)[]): HandResult | null => {
       hand: "Two Pair",
       cards: [...pairs[0], ...pairs[1]],
       multiplier: 2,
+    };
+  }
+
+  // Pair (with wild)
+  if (wildCount >= 1 && validCards.length >= 1) {
+    console.log("🃏 PAIR WITH WILD!");
+    return {
+      hand: "Pair",
+      cards: [validCards[0], wildCards[0]],
+      multiplier: 1.5,
     };
   }
 
@@ -216,7 +284,9 @@ const checkStraight = (cards: Card[]): boolean => {
 
 const calculateRankFactor = (handResult: HandResult): number => {
   const { hand, cards } = handResult;
-  const ranks = cards.map((c) => getCardNumericValue(c.value));
+  const ranks = cards
+    .filter((c) => c.value !== "WILD")
+    .map((c) => getCardNumericValue(c.value));
 
   switch (hand) {
     case "Royal Flush":
@@ -264,32 +334,36 @@ const calculateRankFactor = (handResult: HandResult): number => {
 };
 
 export const calculatePenaltyForHand = (
-  cards: Card[]
+  cards: Card[],
+  wilds: number = 0 // ADD WILDS PARAMETER
 ): { handType: string; penalty: number } => {
-  // ✅ FIX 2: Add defensive check for undefined/null/empty cards
-  console.log("💰 calculatePenaltyForHand called with:", cards);
+  console.log("💰 calculatePenaltyForHand called with:", {
+    cards: cards.length,
+    wilds,
+  });
 
   if (!cards || cards.length === 0) {
     console.log("⚠️ No cards for penalty calculation, returning 0");
     return { handType: "High Card", penalty: 0 };
   }
 
-  const handResult = detectPokerHand(cards);
+  const handResult = detectPokerHand(cards, wilds);
 
   if (!handResult || handResult.hand === "High Card") {
     console.log("⚠️ High Card detected, no penalty");
     return { handType: "High Card", penalty: 0 };
   }
 
-  const sumOfCardValues = handResult.cards.reduce(
-    (sum, c) => sum + getCardPrice(c.value),
-    0
-  );
+  const sumOfCardValues = handResult.cards
+    .filter((c) => c.value !== "WILD")
+    .reduce((sum, c) => sum + getCardPrice(c.value), 0);
   const baseRent = sumOfCardValues * 0.1;
   const rankFactor = calculateRankFactor(handResult);
   const penalty = Math.floor(baseRent * handResult.multiplier * rankFactor);
 
-  console.log(`💰 Penalty calculated: ${penalty} for ${handResult.hand}`);
+  console.log(
+    `💰 Penalty calculated: ${penalty} for ${handResult.hand} (with ${wilds} wilds)`
+  );
 
   return {
     handType: handResult.hand,
@@ -299,10 +373,11 @@ export const calculatePenaltyForHand = (
 
 export const calculatePenalty = (
   card: Card,
-  ownerCards: (Card | null)[]
+  ownerCards: (Card | null)[],
+  ownerBoughtCards: any[] = [],
+  ownerWilds: number = 0 // ADD WILDS PARAMETER
 ): { penalty: number; hand: PokerHand | null } => {
-  // ✅ FIX 3: Add defensive check for undefined/null/empty ownerCards
-  console.log("💸 calculatePenalty called");
+  console.log("💸 calculatePenalty called with wilds:", ownerWilds);
   console.log("💸 Card:", card);
   console.log("💸 Owner cards:", ownerCards);
 
@@ -313,7 +388,7 @@ export const calculatePenalty = (
     return { penalty: basePenalty, hand: null };
   }
 
-  const handResult = detectPokerHand(ownerCards);
+  const handResult = detectPokerHand(ownerCards, ownerWilds);
   const basePrice = getCardPrice(card.value);
 
   if (!handResult || handResult.hand === "High Card") {
@@ -327,7 +402,7 @@ export const calculatePenalty = (
   );
 
   if (isPartOfHand) {
-    const result = calculatePenaltyForHand(handResult.cards);
+    const result = calculatePenaltyForHand(handResult.cards, ownerWilds);
     console.log(`💸 Card is part of hand, penalty: ${result.penalty}`);
     return { penalty: result.penalty, hand: handResult.hand };
   }

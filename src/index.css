@@ -427,7 +427,6 @@ body {
   padding: 0;
   overflow: hidden;
   overflow-y: auto; /* Allow vertical scroll */
-
   background:
     radial-gradient(
       circle at 20% 30%,
