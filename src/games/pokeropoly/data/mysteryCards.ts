@@ -1,6 +1,5 @@
 export interface MysteryCard {
   id: string;
-  m;
   deck: "Mystery" | "Bomb" | "Joker";
   title: string;
   text: string;
@@ -1270,22 +1269,12 @@ export const QUESTION_MARK_POSITIONS = [5, 11, 21, 27, 37, 43, 53, 59];
 let JOKER_POSITIONS: number[] = [];
 
 export const generateJokerPositions = (): number[] => {
-  const excludedPositions = [
-    0,
-    16,
-    32,
-    48, // corners (home bases)
-    ...QUESTION_MARK_POSITIONS, // existing mystery card positions
-  ];
+  // ✅ Only select from question mark positions (not from all 64 spaces)
+  const availablePositions = [...QUESTION_MARK_POSITIONS];
 
-  // Get all positions that are NOT corners or mystery cards
-  const availablePositions = Array.from({ length: 64 }, (_, i) => i).filter(
-    (pos) => !excludedPositions.includes(pos)
-  );
-
-  // ✅ Shuffle the AVAILABLE positions and pick 2
+  // Shuffle and pick 2 positions from the 8 question mark spots
   const shuffled = [...availablePositions].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 2);
+  return shuffled.slice(0, 2); // Pick 2 random positions from mystery card spots
 };
 
 export const initializeJokerPositions = () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 
 interface MiniSlotMachineProps {
   onRollComplete: (dice1: number, dice2: number) => void;
@@ -6,7 +6,11 @@ interface MiniSlotMachineProps {
   disabled?: boolean;
 }
 
-export function MiniSlotMachine({ onRollComplete, isVisible, disabled }: MiniSlotMachineProps) {
+export function MiniSlotMachine({
+  onRollComplete,
+  isVisible,
+  disabled,
+}: MiniSlotMachineProps) {
   const [isSpinning, setIsSpinning] = useState(false);
   const [slot1Values, setSlot1Values] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [slot2Values, setSlot2Values] = useState<number[]>([1, 2, 3, 4, 5, 6]);
@@ -39,24 +43,26 @@ export function MiniSlotMachine({ onRollComplete, isVisible, disabled }: MiniSlo
     setSlot2Values(slot2);
 
     if (slot1Ref.current) {
-      slot1Ref.current.style.transition = 'none';
-      slot1Ref.current.style.transform = 'translateY(0)';
+      slot1Ref.current.style.transition = "none";
+      slot1Ref.current.style.transform = "translateY(0)";
     }
     if (slot2Ref.current) {
-      slot2Ref.current.style.transition = 'none';
-      slot2Ref.current.style.transform = 'translateY(0)';
+      slot2Ref.current.style.transition = "none";
+      slot2Ref.current.style.transform = "translateY(0)";
     }
 
     setTimeout(() => {
       if (slot1Ref.current) {
-        slot1Ref.current.style.transition = 'transform 1.8s cubic-bezier(0.25, 0.1, 0.25, 1)';
+        slot1Ref.current.style.transition =
+          "transform 1.8s cubic-bezier(0.25, 0.1, 0.25, 1)";
         slot1Ref.current.style.transform = `translateY(-${slot1.length * 60 - 60}px)`;
       }
     }, 50);
 
     setTimeout(() => {
       if (slot2Ref.current) {
-        slot2Ref.current.style.transition = 'transform 2.2s cubic-bezier(0.25, 0.1, 0.25, 1)';
+        slot2Ref.current.style.transition =
+          "transform 2.2s cubic-bezier(0.25, 0.1, 0.25, 1)";
         slot2Ref.current.style.transform = `translateY(-${slot2.length * 60 - 60}px)`;
       }
     }, 100);
@@ -74,17 +80,10 @@ export function MiniSlotMachine({ onRollComplete, isVisible, disabled }: MiniSlo
 
   return (
     <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 border-2 border-yellow-500 shadow-xl">
-      <div className="text-white text-center text-sm font-bold mb-3">
-        🎰 Roll the Dice
-      </div>
-
       <div className="flex gap-3 items-center justify-center mb-3">
         <div className="bg-gradient-to-br from-slate-700 to-slate-900 rounded-lg overflow-hidden border-2 border-yellow-400 shadow-lg">
           <div className="h-[60px] w-[60px] overflow-hidden relative">
-            <div
-              ref={slot1Ref}
-              className="absolute top-0 left-0 w-full"
-            >
+            <div ref={slot1Ref} className="absolute top-0 left-0 w-full">
               {slot1Values.map((value, index) => (
                 <div
                   key={index}
@@ -101,10 +100,7 @@ export function MiniSlotMachine({ onRollComplete, isVisible, disabled }: MiniSlo
 
         <div className="bg-gradient-to-br from-slate-700 to-slate-900 rounded-lg overflow-hidden border-2 border-yellow-400 shadow-lg">
           <div className="h-[60px] w-[60px] overflow-hidden relative">
-            <div
-              ref={slot2Ref}
-              className="absolute top-0 left-0 w-full"
-            >
+            <div ref={slot2Ref} className="absolute top-0 left-0 w-full">
               {slot2Values.map((value, index) => (
                 <div
                   key={index}
@@ -123,7 +119,7 @@ export function MiniSlotMachine({ onRollComplete, isVisible, disabled }: MiniSlo
         disabled={disabled || isSpinning}
         className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isSpinning ? 'Rolling...' : '🎲 Roll'}
+        {isSpinning ? "Rolling..." : "🎲 Roll"}
       </button>
 
       {!isSpinning && finalValues[0] === finalValues[1] && (

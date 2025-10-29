@@ -42,10 +42,27 @@ interface Player {
 
 function LocalGame() {
   console.log("LocalGame: Component initialized");
+  const [currentDiceTotal, setCurrentDiceTotal] = useState<number | null>(null);
+
   const [jokerPositions, setJokerPositions] = useState<number[]>([]);
   useEffect(() => {
     console.log("🔍 jokerPositions state changed:", jokerPositions);
   }, [jokerPositions]);
+
+  // Disable scrolling when component mounts, re-enable when it unmounts
+  useEffect(() => {
+    // Save original overflow value
+    const originalOverflow = document.body.style.overflow;
+
+    // Disable scrolling
+    document.body.style.overflow = "hidden";
+
+    // Cleanup: re-enable scrolling when component unmounts
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []); // Empty dependency array = runs once on mount
+
   const [hasExtraTurn, setHasExtraTurn] = useState(false);
 
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 0 });
@@ -412,22 +429,38 @@ function LocalGame() {
     setDealtCards(newDealtCards);
     console.log("handleDeal: Set dealtCards", { dealtCards: newDealtCards });
 
-    // Assign random mystery cards to question mark positions
+    // NEW CODE - ADD THIS:
     const newMysteryCards: { [key: number]: MysteryCard } = {};
-    QUESTION_MARK_POSITIONS.forEach((pos) => {
-      newMysteryCards[pos] = getRandomMysteryCard();
-      console.log("handleDeal: Assigned mystery card to position", {
-        position: pos,
-        mysteryCard: newMysteryCards[pos],
-      });
-    });
-    setMysteryCardPositions(newMysteryCards);
-    console.log("handleDeal: Set mysteryCardPositions", { newMysteryCards });
 
-    // Select 2 random ? positions for joker hats (visual indicator)
-    // Initialize joker positions at game start
+    // First, initialize joker positions (2 wild cards)
     const newJokerPositions = initializeJokerPositions();
     setJokerPositions(newJokerPositions);
+
+    // Get the 6 non-joker positions
+    const nonJokerPositions = QUESTION_MARK_POSITIONS.filter(
+      (pos) => !newJokerPositions.includes(pos)
+    );
+
+    // Shuffle Mystery and Bomb cards separately
+    const shuffledMysteryCards = [...MYSTERY_CARDS].sort(
+      () => Math.random() - 0.5
+    );
+    const shuffledBombCards = [...BOMB_CARDS].sort(() => Math.random() - 0.5);
+
+    // Assign 3 Mystery cards and 3 Bomb cards to the 6 positions
+    for (let i = 0; i < 6; i++) {
+      const pos = nonJokerPositions[i];
+      if (i < 3) {
+        // First 3 positions get Mystery cards
+        newMysteryCards[pos] = shuffledMysteryCards[i];
+      } else {
+        // Last 3 positions get Bomb cards
+        newMysteryCards[pos] = shuffledBombCards[i - 3];
+      }
+    }
+
+    setMysteryCardPositions(newMysteryCards);
+
     console.log("🃏 handleDeal: Joker positions set:", {
       jokerPositions: newJokerPositions,
       questionMarkPositions: QUESTION_MARK_POSITIONS,
@@ -499,7 +532,8 @@ function LocalGame() {
       return;
     }
     setHasPair(isPair);
-    setHasExtraTurn(isPair); // Store extra turn flag
+    setHasExtraTurn(isPair);
+    setCurrentDiceTotal(total); // ADD THIS - Show the total
     console.log("handleDrawFromShoe: Set hasPair and hasExtraTurn", {
       hasPair: isPair,
     });
@@ -824,6 +858,8 @@ function LocalGame() {
         console.log("handleMoveFromShoe: Movement complete");
         clearInterval(moveInterval);
         setIsMoving(false);
+        setCurrentDiceTotal(null); // ADD THIS - Clear total after movement
+
         console.log("handleMoveFromShoe: Set isMoving to false");
 
         const finalPosition = (startPosition + total) % 64;
@@ -1605,7 +1641,7 @@ function LocalGame() {
                     <img
                       src="/games/pokeropoly/images/wildcard.png"
                       alt="Wild Card"
-                      className="w-full h-full object-cover"
+                      className="w-[120%] h-[120%] object-contain" // CHANGED: larger and contained
                       onError={(e) =>
                         console.error(
                           "❌ Wild card image failed to load at position:",
@@ -1671,7 +1707,7 @@ function LocalGame() {
                                 ? "Bomb Card"
                                 : "Mystery Card"
                             }
-                            className="w-full h-full object-cover"
+                            className="w-[120%] h-[120%] object-contain" // CHANGED: larger and contained
                             onError={(e) =>
                               console.error(
                                 `❌ ${mysteryCard.deck} image failed to load:`,
@@ -1728,13 +1764,13 @@ function LocalGame() {
                     }}
                   >
                     <div
-                      className="text-sm font-bold leading-none"
+                      className="text-xl font-bold leading-none" // CHANGED: sm → xl
                       style={{ color: isOwned ? "white" : suitColor }}
                     >
                       {card.value}
                     </div>
                     <div
-                      className="text-xl leading-none mt-0.5"
+                      className="text-4xl leading-none mt-1" // CHANGED: text-xl → text-4xl, mt-0.5 → mt-1
                       style={{ color: isOwned ? "white" : suitColor }}
                     >
                       {card.suit}
@@ -1849,7 +1885,7 @@ function LocalGame() {
 
                     {player.wilds && player.wilds > 0 && (
                       <div className="text-xs text-yellow-400 font-bold">
-                        🃏 Wild Cards Active
+                        🃏 Wild Cards Active: {player.wilds}
                       </div>
                     )}
                   </div>
@@ -1873,7 +1909,20 @@ function LocalGame() {
                           disabled={isMoving}
                         />
                       )}
+
+                    {/* ADD THIS - Display dice total during movement */}
+                    {currentPlayerIndex === index &&
+                      currentDiceTotal !== null &&
+                      isMoving && (
+                        <div className="mt-2 bg-yellow-400 text-black font-bold text-center py-2 px-4 rounded-lg shadow-xl animate-pulse">
+                          <div className="text-xs mb-1">Moving</div>
+                          <div className="text-2xl">
+                            {currentDiceTotal} Spaces
+                          </div>
+                        </div>
+                      )}
                   </div>
+
                   {currentPlayerIndex === index && landedCard && (
                     <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
                       <div className="text-white/70 text-xs mb-2 font-semibold">
