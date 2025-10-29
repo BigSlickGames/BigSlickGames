@@ -2033,7 +2033,7 @@ function LocalGame() {
                     {player.boughtCards.length > 0 ? (
                       <>
                         <div className="text-white/70 text-xs mb-1.5 font-semibold">
-                          Owned Cards
+                          Best Hand
                         </div>
                         <div className="space-y-2">
                           {(() => {
