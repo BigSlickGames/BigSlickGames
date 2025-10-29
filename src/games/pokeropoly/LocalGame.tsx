@@ -66,6 +66,11 @@ function LocalGame() {
   const [hasExtraTurn, setHasExtraTurn] = useState(false);
 
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 0 });
+  const [boardRotation, setBoardRotation] = useState(0); // ADD THIS
+  const [profileRotation, setProfileRotation] = useState(0); // ADD THIS
+  const [rotationMode, setRotationMode] = useState<"board" | "profiles">(
+    "board"
+  ); // ADD THIS
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -216,15 +221,24 @@ function LocalGame() {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    console.log("handleWheel: Wheel event", { deltaY: e.deltaY, invertScroll });
+    console.log("handleWheel: Wheel event", {
+      deltaY: e.deltaY,
+      invertScroll,
+      rotationMode,
+    });
     e.preventDefault();
     const direction = invertScroll ? -1 : 1;
-    setRotation((prev) => ({
-      ...prev,
-      z: prev.z + (e.deltaY > 0 ? 10 * direction : -10 * direction),
-    }));
+    const rotationAmount = e.deltaY > 0 ? 10 * direction : -10 * direction;
+
+    if (rotationMode === "board") {
+      setBoardRotation((prev) => prev + rotationAmount);
+    } else {
+      setProfileRotation((prev) => prev + rotationAmount);
+    }
+
     console.log("handleWheel: Updated rotation", {
-      z: rotation.z + (e.deltaY > 0 ? 10 * direction : -10 * direction),
+      rotationMode,
+      rotationAmount,
     });
   };
 
@@ -247,17 +261,19 @@ function LocalGame() {
     console.log("handleTouchMove: Touch move", { currentTouch, touchStart });
     const diff = currentTouch - touchStart;
     const direction = invertScroll ? -1 : 1;
-    setRotation((prev) => ({
-      ...prev,
-      z: prev.z + diff * 0.5 * direction,
-    }));
+    const rotationAmount = diff * 0.5 * direction;
+
+    if (rotationMode === "board") {
+      setBoardRotation((prev) => prev + rotationAmount);
+    } else {
+      setProfileRotation((prev) => prev + rotationAmount);
+    }
+
     console.log("handleTouchMove: Updated rotation", {
-      z: rotation.z + diff * 0.5 * direction,
+      rotationMode,
+      rotationAmount,
     });
     setTouchStart(currentTouch);
-    console.log("handleTouchMove: Updated touchStart", {
-      touchStart: currentTouch,
-    });
   };
 
   const handleTouchEnd = () => {
@@ -1410,6 +1426,27 @@ function LocalGame() {
         >
           {invertScroll ? "🔄 Scroll: Inverted" : "🔄 Scroll: Normal"}
         </button>
+
+        {/* ADD THIS NEW BUTTON */}
+        <button
+          onClick={() => {
+            const newMode = rotationMode === "board" ? "profiles" : "board";
+            setRotationMode(newMode);
+            console.log("Button: Toggled rotation mode", { newMode });
+          }}
+          className={`${
+            rotationMode === "board"
+              ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+              : "bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+          } text-white font-bold py-2 px-4 rounded-lg shadow-xl transition-all hover:scale-105 text-sm border-2 ${
+            rotationMode === "board" ? "border-blue-500" : "border-green-500"
+          }`}
+        >
+          {rotationMode === "board"
+            ? "🎲 Rotate: Board"
+            : "👥 Rotate: Profiles"}
+        </button>
+
         {gameStarted && (
           <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border-2 border-slate-500">
             <div className="text-white text-xs font-semibold mb-2">
@@ -1485,7 +1522,7 @@ function LocalGame() {
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + boardRotation}deg)`,
             width: "850px",
             height: "850px",
           }}
@@ -1623,6 +1660,7 @@ function LocalGame() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%) translateZ(20px)",
+                          zIndex: 100, // ADD zIndex
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -1739,6 +1777,7 @@ function LocalGame() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%)",
+                          zIndex: 100, // ADD zIndex
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -1783,6 +1822,7 @@ function LocalGame() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%)",
+                          zIndex: 100, // ADD zIndex
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -1811,7 +1851,7 @@ function LocalGame() {
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + profileRotation}deg)`,
             width: "850px",
             height: "850px",
           }}
@@ -1995,27 +2035,102 @@ function LocalGame() {
                         <div className="text-white/70 text-xs mb-1.5 font-semibold">
                           Owned Cards
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {player.boughtCards.map((card, cardIdx) => (
-                            <div
-                              key={cardIdx}
-                              className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
-                              style={{ borderColor: getSuitColor(card.suit) }}
-                            >
-                              <div
-                                className="text-[9px] font-bold leading-none"
-                                style={{ color: getSuitColor(card.suit) }}
-                              >
-                                {card.value}
-                              </div>
-                              <div
-                                className="text-xs leading-none mt-0.5"
-                                style={{ color: getSuitColor(card.suit) }}
-                              >
-                                {card.suit}
-                              </div>
-                            </div>
-                          ))}
+                        <div className="space-y-2">
+                          {(() => {
+                            const hand = detectPokerHand(
+                              player.collectedCards,
+                              player.wilds || 0
+                            );
+                            const handCards = hand.cards || [];
+                            const remainingCards = player.boughtCards.filter(
+                              (card) =>
+                                !handCards.some(
+                                  (hCard) =>
+                                    hCard.suit === card.suit &&
+                                    hCard.value === card.value
+                                )
+                            );
+
+                            return (
+                              <>
+                                {/* Poker Hand Section */}
+                                {handCards.length > 0 && (
+                                  <div>
+                                    <p className="text-xs text-yellow-400 font-bold mb-1">
+                                      {getHandDescription(hand)}
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {handCards.map((card, cardIdx) => (
+                                        <div
+                                          key={cardIdx}
+                                          className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                          style={{ borderColor: "#FFD700" }}
+                                        >
+                                          <div
+                                            className="text-[9px] font-bold leading-none"
+                                            style={{
+                                              color: getSuitColor(card.suit),
+                                            }}
+                                          >
+                                            {card.value}
+                                          </div>
+                                          <div
+                                            className="text-xs leading-none mt-0.5"
+                                            style={{
+                                              color: getSuitColor(card.suit),
+                                            }}
+                                          >
+                                            {card.suit}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Remaining Cards Section */}
+                                {remainingCards.length > 0 && (
+                                  <div>
+                                    {handCards.length > 0 && (
+                                      <p className="text-xs text-white/40 mb-1">
+                                        Other Cards:
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-1">
+                                      {remainingCards.map((card, cardIdx) => (
+                                        <div
+                                          key={cardIdx}
+                                          className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                          style={{
+                                            borderColor: getSuitColor(
+                                              card.suit
+                                            ),
+                                          }}
+                                        >
+                                          <div
+                                            className="text-[9px] font-bold leading-none"
+                                            style={{
+                                              color: getSuitColor(card.suit),
+                                            }}
+                                          >
+                                            {card.value}
+                                          </div>
+                                          <div
+                                            className="text-xs leading-none mt-0.5"
+                                            style={{
+                                              color: getSuitColor(card.suit),
+                                            }}
+                                          >
+                                            {card.suit}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </>
                     ) : (
