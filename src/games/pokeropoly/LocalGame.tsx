@@ -1583,7 +1583,7 @@ function LocalGame() {
               }}
             />
             <div
-              className="absolute inset-20 rounded-lg backdrop-blur-sm border-2 pointer-events-none"
+              className="absolute inset-0 rounded-lg backdrop-blur-sm border-2 pointer-events-none"
               style={{
                 background:
                   "linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 50%, rgba(15, 23, 42, 0.6) 100%)",
@@ -1599,7 +1599,7 @@ function LocalGame() {
                 <img
                   src="/games/pokeropoly/images/pokeropoly.png"
                   alt="Pokeropoly"
-                  className="w-[500px] h-auto drop-shadow-[0_0_25px_rgba(168,85,247,0.4)]"
+                  className="w-full h-full object-cover drop-shadow-[0_0_25px_rgba(168,85,247,0.4)]"
                 />
               </div>
             </div>
@@ -1675,11 +1675,11 @@ function LocalGame() {
                     )}
                   </div>
                 ) : getJokerPositions().includes(index) ? (
-                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-yellow-600 overflow-hidden">
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-2 border-yellow-600 rounded-md">
                     <img
                       src="/games/pokeropoly/images/wildcard.png"
                       alt="Wild Card"
-                      className="w-[120%] h-[120%] object-contain" // CHANGED: larger and contained
+                      className="w-full h-full object-contain p-0.5"
                       onError={(e) =>
                         console.error(
                           "❌ Wild card image failed to load at position:",
@@ -1696,7 +1696,7 @@ function LocalGame() {
                   </div>
                 ) : // Find this section in your render code where cards are displayed
                 card.isQuestion ? (
-                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-purple-600 to-purple-800 border-4 border-purple-500 overflow-hidden">
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-2 border-yellow-600 rounded-md">
                     {(() => {
                       const isJoker = getJokerPositions().includes(index);
                       const mysteryCard = mysteryCardPositions[index];
@@ -1715,7 +1715,7 @@ function LocalGame() {
                           <img
                             src="/games/pokeropoly/images/wildcard.png"
                             alt="Wild Card"
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover p-1"
                             onError={(e) =>
                               console.error(
                                 "❌ Wild card image failed to load:",
@@ -1745,7 +1745,7 @@ function LocalGame() {
                                 ? "Bomb Card"
                                 : "Mystery Card"
                             }
-                            className="w-[120%] h-[120%] object-contain" // CHANGED: larger and contained
+                            className="w-[100%] h-[100%] object-contain" // CHANGED: larger and contained
                             onError={(e) =>
                               console.error(
                                 `❌ ${mysteryCard.deck} image failed to load:`,
@@ -1875,7 +1875,7 @@ function LocalGame() {
                 style={{
                   left: "50%",
                   top: "50%",
-                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-30deg) translateZ(23px)`,
+                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-40deg) translateZ(23px) scale(0.8)`,
                 }}
               >
                 <div
