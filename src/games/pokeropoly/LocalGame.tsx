@@ -542,14 +542,10 @@ function LocalGame() {
 
   const handleDrawFromShoe = (total: number, isPair: boolean): void => {
     console.log("handleDrawFromShoe: Drawing from shoe", { total, isPair });
-    if (total <= 0) {
-      console.warn("handleDrawFromShoe: Invalid dice total", { total });
-      endTurn();
-      return;
-    }
+
     setHasPair(isPair);
     setHasExtraTurn(isPair);
-    setCurrentDiceTotal(total); // ADD THIS - Show the total
+    setCurrentDiceTotal(total);
     console.log("handleDrawFromShoe: Set hasPair and hasExtraTurn", {
       hasPair: isPair,
     });
@@ -791,7 +787,9 @@ function LocalGame() {
     const playerIndex = currentPlayerIndex;
     const startPosition = playerPositions[playerIndex];
     let movesMade = 0;
-
+    const moveSound = new Audio(`/games/pokeropoly/sound/move-${total}.mp3`);
+    moveSound.volume = 0.5;
+    moveSound.play().catch((e) => console.log("Sound failed:", e));
     const moveInterval = setInterval(() => {
       if (movesMade < total) {
         setPlayerPositions((prev) => {
@@ -799,6 +797,7 @@ function LocalGame() {
           const oldPosition = newPositions[playerIndex];
           const newPosition = (newPositions[playerIndex] + 1) % 64;
           newPositions[playerIndex] = newPosition;
+
           console.log("handleMoveFromShoe: Moved player", {
             playerIndex,
             oldPosition,

@@ -28,7 +28,10 @@ export function MiniSlotMachine({
 
   const handleRoll = () => {
     if (disabled || isSpinning) return;
-
+    // PLAY DICE SOUND IMMEDIATELY WHEN CLICKED
+    const diceSound = new Audio(`/games/pokeropoly/sound/dice-roll.mp3`);
+    diceSound.volume = 0.5;
+    diceSound.play().catch((e) => console.log("Dice sound failed:", e));
     setIsSpinning(true);
 
     const finalDice1 = Math.floor(Math.random() * 6) + 1;
