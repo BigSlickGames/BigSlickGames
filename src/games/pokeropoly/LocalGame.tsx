@@ -790,6 +790,7 @@ function LocalGame() {
     const moveSound = new Audio(`/games/pokeropoly/sound/move-${total}.mp3`);
     moveSound.volume = 0.5;
     moveSound.play().catch((e) => console.log("Sound failed:", e));
+
     const moveInterval = setInterval(() => {
       if (movesMade < total) {
         setPlayerPositions((prev) => {
@@ -805,8 +806,8 @@ function LocalGame() {
             movesMade,
           });
 
-          // Check if player completed a lap and remove expired jokers AND wilds
-          if (newPosition < oldPosition) {
+          // Check if player JUST completed a lap (moved from 63 to 0)
+          if (oldPosition === 63 && newPosition === 0) {
             console.log("handleMoveFromShoe: Player completed a lap");
             setPlayers((prevPlayers) => {
               const updatedPlayers = [...prevPlayers];
@@ -815,9 +816,8 @@ function LocalGame() {
               updatedPlayers[playerIndex].jokers = updatedPlayers[
                 playerIndex
               ].jokers.filter((joker) => {
-                const keep =
-                  joker.collectedAtPosition > oldPosition ||
-                  joker.collectedAtPosition <= newPosition;
+                // After wrapping around, keep jokers collected on current lap only
+                const keep = joker.collectedAtPosition <= newPosition;
                 console.log("handleMoveFromShoe: Checking joker", {
                   joker,
                   keep,
@@ -832,7 +832,8 @@ function LocalGame() {
 
               updatedPlayers[playerIndex].wildCollectedAt =
                 wildPositions.filter((wildPos) => {
-                  const keep = wildPos > oldPosition || wildPos <= newPosition;
+                  // Keep only wilds collected on the current lap (position 0 and onwards after wrap)
+                  const keep = wildPos <= newPosition;
                   if (!keep) {
                     wildsExpired++;
                     console.log("🃏 Wild card expired at position:", wildPos);
@@ -873,14 +874,13 @@ function LocalGame() {
         console.log("handleMoveFromShoe: Movement complete");
         clearInterval(moveInterval);
         setIsMoving(false);
-        setCurrentDiceTotal(null); // ADD THIS - Clear total after movement
+        setCurrentDiceTotal(null);
 
         console.log("handleMoveFromShoe: Set isMoving to false");
 
         const finalPosition = (startPosition + total) % 64;
         console.log("handleMoveFromShoe: Final position", { finalPosition });
 
-        // Check if landed on Joker position
         // Check if landed on Joker position
         if (isJokerPosition(finalPosition)) {
           console.log("🃏 Player landed on Joker!");
@@ -939,11 +939,11 @@ function LocalGame() {
             card,
             ownerPlayer.collectedCards,
             ownerPlayer.boughtCards,
-            ownerPlayer.wilds || 0 // Pass wilds to penalty calculation
+            ownerPlayer.wilds || 0
           );
           const handResult = detectPokerHand(
             ownerPlayer.collectedCards,
-            ownerPlayer.wilds || 0 // Pass wilds to hand detection
+            ownerPlayer.wilds || 0
           );
           setPenaltyInfo({
             card,
