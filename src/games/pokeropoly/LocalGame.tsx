@@ -3,6 +3,7 @@ import { PlayerProfile } from "./components/PlayerProfile";
 import { PlayerIcon } from "./components/PlayerIcon";
 import { PenaltyModal } from "./components/PenaltyModal";
 import { AuctionModal } from "./components/AuctionModalLocal";
+import { useRef } from "react";
 
 import { SellCardsModal } from "./components/SellCardsModal";
 import { MiniSlotMachine } from "./components/MiniSlotMachine";
@@ -43,6 +44,9 @@ interface Player {
 function LocalGame() {
   console.log("LocalGame: Component initialized");
   const [currentDiceTotal, setCurrentDiceTotal] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.3); // 30% default volume
 
   const [jokerPositions, setJokerPositions] = useState<number[]>([]);
   useEffect(() => {
@@ -64,6 +68,11 @@ function LocalGame() {
   }, []); // Empty dependency array = runs once on mount
 
   const [hasExtraTurn, setHasExtraTurn] = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [videoPath, setVideoPath] = useState<string>("");
+  const [videoCardType, setVideoCardType] = useState<
+    "bomb" | "lightning" | null
+  >(null);
 
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 0 });
   const [boardRotation, setBoardRotation] = useState(0); // ADD THIS
@@ -557,12 +566,46 @@ function LocalGame() {
     console.log("handleMysteryCardEffect: Processing mystery card", {
       mysteryCard,
     });
+
+    // Show video if Bomb or Lightning card
+    if (mysteryCard.deck === "Bomb") {
+      setVideoPath("/games/pokeropoly/video/bomb.mp4");
+      setVideoCardType("bomb");
+      setShowVideoModal(true);
+      setShowMysteryCardModal(false); // <-- ADD THIS LINE
+      setLandedMysteryCard(null); // <-- ADD THIS LINE
+
+      setTimeout(() => {
+        setLandedMysteryCard(mysteryCard); // <-- RE-SET for modal text
+        proceedWithMysteryCardEffect(mysteryCard);
+      }, 2500);
+      return;
+    } else if (mysteryCard.deck !== "Joker") {
+      // Assuming non-Bomb, non-Joker cards are Lightning
+      setVideoPath("/games/pokeropoly/video/lightning.mp4");
+      setVideoCardType("lightning");
+      setShowVideoModal(true);
+      setShowMysteryCardModal(false); // <-- ADD THIS LINE
+      setLandedMysteryCard(null); // <-- ADD THIS LINE
+
+      setTimeout(() => {
+        setLandedMysteryCard(mysteryCard); // <-- RE-SET for modal text
+        proceedWithMysteryCardEffect(mysteryCard);
+      }, 2500);
+      return;
+    }
+
+    proceedWithMysteryCardEffect(mysteryCard);
+  };
+
+  // New helper function - extract the actual effect processing
+  const proceedWithMysteryCardEffect = (mysteryCard: MysteryCard) => {
+    console.log("proceedWithMysteryCardEffect: Processing effects", {
+      mysteryCard,
+    });
+
     const playerIndex = currentPlayerIndex;
     const finalPosition = playerPositions[playerIndex];
-    console.log("handleMysteryCardEffect: Current player and position", {
-      playerIndex,
-      finalPosition,
-    });
 
     const effects = mysteryCard.effects;
 
@@ -578,7 +621,7 @@ function LocalGame() {
         } else {
           newPlayers[playerIndex].chips = Math.max(
             0,
-            newPlayers[playerIndex].chips + effects.cb! // cb is already negative
+            newPlayers[playerIndex].chips + effects.cb!
           );
         }
         console.log("handleMysteryCardEffect: Updated chips", {
@@ -597,7 +640,7 @@ function LocalGame() {
       setPlayerPositions((prev) => {
         const newPositions = [...prev];
         const currentPos = newPositions[playerIndex];
-        const newPos = (currentPos + effects.mb! + 64) % 64; // +64 ensures positive modulo
+        const newPos = (currentPos + effects.mb! + 64) % 64;
         newPositions[playerIndex] = newPos;
         console.log("handleMysteryCardEffect: Moved player", {
           playerIndex,
@@ -619,7 +662,6 @@ function LocalGame() {
         "Diamonds Home": 32,
         "Clubs Home": 48,
       };
-
       const targetPosition = homePositions[effects.mt];
       if (targetPosition !== undefined) {
         setPlayerPositions((prev) => {
@@ -641,7 +683,6 @@ function LocalGame() {
         count: effects.dr,
       });
 
-      // Get random cards from available positions
       const availableCards = Object.entries(dealtCards)
         .filter(([pos, card]) => cardOwners[parseInt(pos)] === undefined)
         .map(([pos, card]) => ({ position: parseInt(pos), card }));
@@ -663,13 +704,11 @@ function LocalGame() {
               position: position,
             });
 
-            // Mark card as owned
             setCardOwners((prevOwners) => ({
               ...prevOwners,
               [position]: playerIndex,
             }));
 
-            // Remove from available cards
             availableCards.splice(randomIndex, 1);
           }
 
@@ -688,7 +727,6 @@ function LocalGame() {
         turns: effects.sk,
       });
 
-      // Skip turns by advancing currentPlayerIndex
       let skipsRemaining = effects.sk;
       const skipTurns = () => {
         if (skipsRemaining > 0) {
@@ -713,7 +751,7 @@ function LocalGame() {
     // Handle repeat turn (rt)
     if (effects.rt === true) {
       console.log("handleMysteryCardEffect: Applying repeat turn effect");
-      setHasPair(true); // Use the pair mechanism to grant extra turn
+      setHasPair(true);
     }
 
     // Handle collect/pay each player (ce)
@@ -726,7 +764,6 @@ function LocalGame() {
         const newPlayers = [...prev];
 
         if (effects.ce! > 0) {
-          // Collect from each other player
           for (let i = 0; i < newPlayers.length; i++) {
             if (i !== playerIndex) {
               const payment = Math.min(effects.ce!, newPlayers[i].chips);
@@ -735,9 +772,8 @@ function LocalGame() {
             }
           }
         } else {
-          // Pay to each other player
           const paymentPerPlayer = Math.abs(effects.ce!);
-          const totalPayment = paymentPerPlayer * 3; // 3 other players
+          const totalPayment = paymentPerPlayer * 3;
           const actualPayment = Math.min(
             totalPayment,
             newPlayers[playerIndex].chips
@@ -762,12 +798,12 @@ function LocalGame() {
     // Close modal and handle turn continuation
     setLandedMysteryCard(null);
     setShowMysteryCardModal(false);
-    console.log("handleMysteryCardEffect: Cleared mystery card modal");
+    setShowVideoModal(false);
+    console.log("handleMysteryCardEffect: Cleared modals");
 
     // If repeat turn effect, keep turn; otherwise end turn
     if (effects.rt === true) {
       console.log("handleMysteryCardEffect: Repeat turn effect, keeping turn");
-      // Don't clear hasExtraTurn - they still get doubles bonus
     } else if (hasExtraTurn) {
       console.log(
         "handleMysteryCardEffect: Player rolled doubles, keeping turn"
@@ -779,6 +815,41 @@ function LocalGame() {
       endTurn();
     }
   };
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.loop = true; // This makes it loop continuously
+      audioRef.current.volume = musicVolume;
+      audioRef.current.src =
+        "/games/pokeropoly/sound/poker-opoly-them-music.mp3";
+
+      // Ensure looping works properly
+      audioRef.current.addEventListener("ended", () => {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+      });
+
+      audioRef.current.addEventListener("error", (e) => {
+        console.error("Audio loading error:", e);
+      });
+    }
+
+    if (gameStarted && !isMusicPlaying) {
+      audioRef.current.play().catch((err) => {
+        console.error("Audio play error:", err);
+      });
+      setIsMusicPlaying(true);
+    } else if (!gameStarted && isMusicPlaying) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0; // Reset to start
+      setIsMusicPlaying(false);
+    }
+
+    return () => {
+      // Cleanup
+    };
+  }, [gameStarted, isMusicPlaying, musicVolume]);
 
   const handleMoveFromShoe = (total: number) => {
     console.log("handleMoveFromShoe: Starting player movement", { total });
@@ -806,17 +877,13 @@ function LocalGame() {
             movesMade,
           });
 
-          // Check if player JUST completed a lap (moved from 63 to 0)
           if (oldPosition === 63 && newPosition === 0) {
             console.log("handleMoveFromShoe: Player completed a lap");
             setPlayers((prevPlayers) => {
               const updatedPlayers = [...prevPlayers];
-
-              // Remove expired jokers
               updatedPlayers[playerIndex].jokers = updatedPlayers[
                 playerIndex
               ].jokers.filter((joker) => {
-                // After wrapping around, keep jokers collected on current lap only
                 const keep = joker.collectedAtPosition <= newPosition;
                 console.log("handleMoveFromShoe: Checking joker", {
                   joker,
@@ -825,14 +892,12 @@ function LocalGame() {
                 return keep;
               });
 
-              // Remove expired wilds (after completing 1 full lap)
               const wildPositions =
                 updatedPlayers[playerIndex].wildCollectedAt || [];
               let wildsExpired = 0;
 
               updatedPlayers[playerIndex].wildCollectedAt =
                 wildPositions.filter((wildPos) => {
-                  // Keep only wilds collected on the current lap (position 0 and onwards after wrap)
                   const keep = wildPos <= newPosition;
                   if (!keep) {
                     wildsExpired++;
@@ -841,7 +906,6 @@ function LocalGame() {
                   return keep;
                 });
 
-              // Decrement wild count for expired wilds
               if (wildsExpired > 0) {
                 updatedPlayers[playerIndex].wilds = Math.max(
                   0,
@@ -850,12 +914,6 @@ function LocalGame() {
                 console.log(
                   `🃏 ${wildsExpired} Wild card(s) expired for player ${playerIndex}`
                 );
-
-                // Show notification
-                setGameLog((prev) => [
-                  ...prev,
-                  `${updatedPlayers[playerIndex].name}'s ${wildsExpired} Wild Card(s) expired! 🃏`,
-                ]);
               }
 
               console.log("handleMoveFromShoe: Updated jokers and wilds", {
@@ -887,12 +945,9 @@ function LocalGame() {
 
           setPlayers((prevPlayers) => {
             const updatedPlayers = [...prevPlayers];
-
-            // ✅ Add to wilds counter ONLY
             updatedPlayers[playerIndex].wilds =
               (updatedPlayers[playerIndex].wilds || 0) + 1;
 
-            // Track where wild was collected for expiration
             if (!updatedPlayers[playerIndex].wildCollectedAt) {
               updatedPlayers[playerIndex].wildCollectedAt = [];
             }
@@ -906,21 +961,64 @@ function LocalGame() {
             return updatedPlayers;
           });
 
-          // Show Joker modal
           setLandedMysteryCard(JOKER_CARD);
           setShowMysteryCardModal(true);
           return;
         }
 
-        // Check if landed on mystery card
+        // Check if landed on mystery card - DIRECT VIDEO MODAL
+        // Check if landed on mystery card - DIRECT VIDEO MODAL
+        // Check if landed on mystery card - DIRECT VIDEO MODAL
         if (QUESTION_MARK_POSITIONS.includes(finalPosition)) {
           const mysteryCard = mysteryCardPositions[finalPosition];
           if (mysteryCard) {
-            setLandedMysteryCard(mysteryCard);
-            setShowMysteryCardModal(true);
-            console.log("handleMoveFromShoe: Landed on mystery card", {
-              mysteryCard,
-            });
+            if (mysteryCard.deck === "Bomb") {
+              setLandedMysteryCard(mysteryCard);
+              setVideoPath("/games/pokeropoly/video/bomb.mp4");
+              setVideoCardType("bomb");
+              setShowVideoModal(true);
+              setShowMysteryCardModal(false);
+
+              // Play bomb sound effect
+              const bombSound = new Audio(
+                "/games/pokeropoly/sound/bomb-explosion.mp3"
+              );
+              bombSound.volume = 0.9;
+              bombSound
+                .play()
+                .catch((e) => console.log("Bomb sound failed:", e));
+
+              setTimeout(() => {
+                proceedWithMysteryCardEffect(mysteryCard);
+              }, 5000);
+              return;
+            } else if (mysteryCard.deck === "Mystery") {
+              setLandedMysteryCard(mysteryCard);
+              setVideoPath("/games/pokeropoly/video/lightning.mp4");
+              setVideoCardType("lightning");
+              setShowVideoModal(true);
+              setShowMysteryCardModal(false);
+
+              // Play lightning sound effect
+              const lightningSound = new Audio(
+                "/games/pokeropoly/sound/lightning-strike.mp3"
+              );
+              lightningSound.volume = 0.9;
+              lightningSound
+                .play()
+                .catch((e) => console.log("Lightning sound failed:", e));
+
+              setTimeout(() => {
+                proceedWithMysteryCardEffect(mysteryCard);
+              }, 5000);
+              return;
+            } else {
+              setLandedMysteryCard(mysteryCard);
+              setShowMysteryCardModal(true);
+              console.log("handleMoveFromShoe: Landed on mystery card", {
+                mysteryCard,
+              });
+            }
           }
           return;
         }
@@ -1401,7 +1499,11 @@ function LocalGame() {
 
   // The render part remains unchanged, but you can add logs here if you want to debug rendering issues
   console.log("LocalGame: Rendering component");
-
+  if (!players || players.length === 0) {
+    return (
+      <div className="text-white text-center p-8">Waiting for players...</div>
+    );
+  }
   return (
     <div
       className="w-screen h-screen flex items-center justify-center overflow-hidden"
@@ -1500,6 +1602,49 @@ function LocalGame() {
               >
                 Reset
               </button>
+            </div>
+          </div>
+        )}
+
+        {gameStarted && (
+          <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border-2 border-slate-500">
+            <div className="text-white text-xs font-semibold mb-2">Audio</div>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-white text-xs w-12">🎵</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={musicVolume * 100}
+                  onChange={(e) => {
+                    const volume = parseFloat(e.target.value) / 100;
+                    setMusicVolume(volume);
+                    if (audioRef.current) {
+                      audioRef.current.volume = volume;
+                    }
+                  }}
+                  className="w-24"
+                />
+                <span className="text-white text-xs">
+                  {Math.round(musicVolume * 100)}%
+                </span>
+              </div>
+              {/* <button
+                onClick={() => {
+                  if (audioRef.current) {
+                    if (isMusicPlaying) {
+                      audioRef.current.pause();
+                    } else {
+                      audioRef.current.play();
+                    }
+                    setIsMusicPlaying(!isMusicPlaying);
+                  }
+                }}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm"
+              >
+                {isMusicPlaying ? "Mute" : "Unmute"}
+              </button> */}
             </div>
           </div>
         )}
@@ -2295,6 +2440,117 @@ function LocalGame() {
             setShowRules(false);
           }}
         />
+      )}
+      {showVideoModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="max-w-4xl w-full bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-yellow-400 p-8">
+            <div className="flex gap-6 items-center">
+              {/* Video Side */}
+              <div className="flex-shrink-0 w-80">
+                <video
+                  autoPlay
+                  muted
+                  className="w-full h-auto rounded-lg shadow-lg border-2 border-yellow-400"
+                  onEnded={() => {
+                    setShowVideoModal(false);
+                  }}
+                >
+                  <source src={videoPath} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+
+              {/* Text Side */}
+              <div className="flex-1 text-center">
+                <div className="text-6xl mb-4">
+                  {landedMysteryCard?.icon ||
+                    (landedMysteryCard?.deck === "Joker"
+                      ? "🃏"
+                      : landedMysteryCard?.deck === "Bomb"
+                        ? "💣"
+                        : "⚡")}
+                </div>
+                <h2 className="text-3xl font-bold text-white mb-4">
+                  {landedMysteryCard?.name ||
+                    landedMysteryCard?.title ||
+                    "Unknown Card"}
+                </h2>
+                <p className="text-white/90 text-lg mb-6">
+                  {landedMysteryCard?.description ||
+                    landedMysteryCard?.text ||
+                    "No description available"}
+                </p>
+                <div className="bg-black border-2 border-yellow-400 rounded-xl p-4 mb-6">
+                  {landedMysteryCard?.effects.cb && (
+                    <div
+                      className={`text-xl font-semibold ${
+                        landedMysteryCard.effects.cb > 0
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {landedMysteryCard.effects.cb > 0 ? "+" : ""}
+                      {landedMysteryCard.effects.cb} Chips
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.mb && (
+                    <div className="text-xl font-semibold text-blue-400">
+                      Move{" "}
+                      {landedMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
+                      {Math.abs(landedMysteryCard.effects.mb)} spaces
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.mt && (
+                    <div className="text-xl font-semibold text-blue-400">
+                      Move to {landedMysteryCard.effects.mt}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.dr && (
+                    <div className="text-xl font-semibold text-yellow-400">
+                      Draw {landedMysteryCard.effects.dr} card
+                      {landedMysteryCard.effects.dr > 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.sk && (
+                    <div className="text-xl font-semibold text-red-400">
+                      Skip {landedMysteryCard.effects.sk} turn
+                      {landedMysteryCard.effects.sk > 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.rt && (
+                    <div className="text-xl font-semibold text-green-400">
+                      Repeat your turn
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.ce && (
+                    <div
+                      className={`text-xl font-semibold ${
+                        landedMysteryCard.effects.ce > 0
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {landedMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
+                      {Math.abs(landedMysteryCard.effects.ce)} from each player
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    console.log(
+                      "Button: Continue mystery card effect",
+                      JSON.stringify({ landedMysteryCard }, null, 2)
+                    );
+                    handleMysteryCardEffect(landedMysteryCard);
+                  }}
+                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

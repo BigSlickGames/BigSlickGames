@@ -82,14 +82,27 @@ const getJokerPositions = (): number[] => {
 };
 
 export class RoomService {
+  // Add this helper function OUTSIDE the class, at the top:
+
+  // THEN update createRoom to:
   static async createRoom(
     hostUserId: string,
     maxPlayers: number = 4
   ): Promise<Room | null> {
     try {
+      // ✅ GENERATE CODE INLINE HERE
+      const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let roomCode = "";
+      for (let i = 0; i < 6; i++) {
+        roomCode += characters.charAt(
+          Math.floor(Math.random() * characters.length)
+        );
+      }
+
       const { data, error } = await supabase
         .from("poker_opoly_rooms")
         .insert({
+          room_code: roomCode,
           host_user_id: hostUserId,
           max_players: maxPlayers,
           status: "waiting",
