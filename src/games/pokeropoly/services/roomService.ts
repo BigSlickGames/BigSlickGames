@@ -16,6 +16,7 @@ export interface Room {
 }
 
 export interface RoomPlayer {
+  eliminated: boolean;
   id: string;
   room_id: string;
   user_id: string;

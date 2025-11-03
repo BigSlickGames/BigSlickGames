@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PlayerProfile } from "./components/PlayerProfile";
 import { PlayerIcon } from "./components/PlayerIcon";
 import { PenaltyModal } from "./components/PenaltyModal";
@@ -394,6 +394,11 @@ function LocalGame() {
 
   const handleDeal = () => {
     console.log("handleDeal: Starting card deal");
+    // Play deal cards sound effect
+    const dealSound = new Audio("/games/pokeropoly/sound/deal-cards.mp3");
+    dealSound.volume = 0.9; // Adjust volume as needed (0.5-0.9 range works well with other sounds)
+    dealSound.play().catch((e) => console.log("Deal sound failed", e));
+
     const suits = ["♠", "♥", "♦", "♣"];
     const values = [
       "A",
@@ -598,223 +603,204 @@ function LocalGame() {
     proceedWithMysteryCardEffect(mysteryCard);
   };
 
-  // New helper function - extract the actual effect processing
-  const proceedWithMysteryCardEffect = (mysteryCard: MysteryCard) => {
-    console.log("proceedWithMysteryCardEffect: Processing effects", {
-      mysteryCard,
+  const endTurn = () => {
+    console.log("endTurn: Ending turn for player", { currentPlayerIndex });
+    setCurrentPlayerIndex((prev) => {
+      const nextIndex = (prev + 1) % 4;
+      console.log("endTurn: Set next player", { nextIndex });
+      return nextIndex;
     });
+  };
+  // New helper function - extract the actual effect processing
+  const proceedWithMysteryCardEffect = useCallback(
+    (mysteryCard: MysteryCard, playerIndex?: number) => {
+      const safeIndex =
+        playerIndex !== undefined ? playerIndex : currentPlayerIndex;
+      const effects = mysteryCard.effects;
 
-    const playerIndex = currentPlayerIndex;
-    const finalPosition = playerPositions[playerIndex];
+      console.log(
+        `proceedWithMysteryCardEffect: Processing effects`,
+        mysteryCard.title
+      );
 
-    const effects = mysteryCard.effects;
-
-    // Handle chip bonus/penalty (cb)
-    if (effects.cb !== undefined) {
-      console.log("handleMysteryCardEffect: Applying chip effect", {
-        value: effects.cb,
-      });
-      setPlayers((prev) => {
-        const newPlayers = [...prev];
-        if (effects.cb! > 0) {
-          newPlayers[playerIndex].chips += effects.cb!;
-        } else {
-          newPlayers[playerIndex].chips = Math.max(
-            0,
-            newPlayers[playerIndex].chips + effects.cb!
-          );
-        }
-        console.log("handleMysteryCardEffect: Updated chips", {
-          playerIndex,
-          chips: newPlayers[playerIndex].chips,
-        });
-        return newPlayers;
-      });
-    }
-
-    // Handle movement bonus/penalty (mb)
-    if (effects.mb !== undefined) {
-      console.log("handleMysteryCardEffect: Applying movement effect", {
-        value: effects.mb,
-      });
-      setPlayerPositions((prev) => {
-        const newPositions = [...prev];
-        const currentPos = newPositions[playerIndex];
-        const newPos = (currentPos + effects.mb! + 64) % 64;
-        newPositions[playerIndex] = newPos;
-        console.log("handleMysteryCardEffect: Moved player", {
-          playerIndex,
-          from: currentPos,
-          to: newPos,
-        });
-        return newPositions;
-      });
-    }
-
-    // Handle move to specific location (mt)
-    if (effects.mt !== undefined) {
-      console.log("handleMysteryCardEffect: Applying teleport effect", {
-        destination: effects.mt,
-      });
-      const homePositions: { [key: string]: number } = {
-        "Hearts Home": 16,
-        "Spades Home": 0,
-        "Diamonds Home": 32,
-        "Clubs Home": 48,
-      };
-      const targetPosition = homePositions[effects.mt];
-      if (targetPosition !== undefined) {
-        setPlayerPositions((prev) => {
-          const newPositions = [...prev];
-          newPositions[playerIndex] = targetPosition;
-          console.log("handleMysteryCardEffect: Teleported player", {
-            playerIndex,
-            destination: effects.mt,
-            position: targetPosition,
-          });
-          return newPositions;
-        });
-      }
-    }
-
-    // Handle draw cards (dr)
-    if (effects.dr !== undefined && effects.dr > 0) {
-      console.log("handleMysteryCardEffect: Applying draw cards effect", {
-        count: effects.dr,
-      });
-
-      const availableCards = Object.entries(dealtCards)
-        .filter(([pos, card]) => cardOwners[parseInt(pos)] === undefined)
-        .map(([pos, card]) => ({ position: parseInt(pos), card }));
-
-      if (availableCards.length > 0) {
+      // Handle chip bonus/penalty (cb)
+      if (effects.cb !== undefined) {
+        console.log(`💰 Applying chip effect: ${effects.cb}`);
         setPlayers((prev) => {
           const newPlayers = [...prev];
-          const cardsToAdd = Math.min(effects.dr!, availableCards.length);
-
-          for (let i = 0; i < cardsToAdd; i++) {
-            const randomIndex = Math.floor(
-              Math.random() * availableCards.length
+          if (effects.cb! > 0) {
+            newPlayers[safeIndex].chips += effects.cb!;
+          } else {
+            newPlayers[safeIndex].chips = Math.max(
+              0,
+              newPlayers[safeIndex].chips + effects.cb!
             );
-            const { position, card } = availableCards[randomIndex];
-
-            newPlayers[playerIndex].collectedCards.push({ ...card });
-            newPlayers[playerIndex].boughtCards.push({
-              ...card,
-              position: position,
-            });
-
-            setCardOwners((prevOwners) => ({
-              ...prevOwners,
-              [position]: playerIndex,
-            }));
-
-            availableCards.splice(randomIndex, 1);
           }
-
-          console.log("handleMysteryCardEffect: Drew cards", {
-            playerIndex,
-            count: cardsToAdd,
-          });
           return newPlayers;
         });
       }
-    }
 
-    // Handle skip turns (sk)
-    if (effects.sk !== undefined && effects.sk > 0) {
-      console.log("handleMysteryCardEffect: Applying skip turn effect", {
-        turns: effects.sk,
-      });
+      // Handle movement bonus/penalty (mb)
+      if (effects.mb !== undefined) {
+        console.log(`🚀 Applying movement effect: ${effects.mb}`);
+        setPlayerPositions((prev) => {
+          const newPositions = [...prev];
+          const currentPos = newPositions[safeIndex];
+          const newPos = (currentPos + effects.mb! + 64) % 64;
+          newPositions[safeIndex] = newPos;
+          return newPositions;
+        });
+      }
 
-      let skipsRemaining = effects.sk;
-      const skipTurns = () => {
-        if (skipsRemaining > 0) {
-          setCurrentPlayerIndex((prev) => {
-            const nextIndex = (prev + 1) % 4;
-            console.log("handleMysteryCardEffect: Skipped turn", {
-              from: prev,
-              to: nextIndex,
-              remaining: skipsRemaining - 1,
-            });
-            skipsRemaining--;
-            if (skipsRemaining > 0) {
-              setTimeout(skipTurns, 100);
-            }
-            return nextIndex;
+      // Handle teleport (mt)
+      if (effects.mt !== undefined) {
+        console.log(`🌀 Applying teleport effect: ${effects.mt}`);
+        const homePositions: { [key: string]: number } = {
+          "Hearts Home": 0,
+          "Spades Home": 16,
+          "Diamonds Home": 32,
+          "Clubs Home": 48,
+        };
+        const targetPosition = homePositions[effects.mt];
+        if (targetPosition !== undefined) {
+          setPlayerPositions((prev) => {
+            const newPositions = [...prev];
+            newPositions[safeIndex] = targetPosition;
+            return newPositions;
           });
         }
-      };
-      skipTurns();
-    }
+      }
 
-    // Handle repeat turn (rt)
-    if (effects.rt === true) {
-      console.log("handleMysteryCardEffect: Applying repeat turn effect");
-      setHasPair(true);
-    }
+      // Handle draw cards (dr)
+      if (effects.dr !== undefined && effects.dr > 0) {
+        console.log(`🃏 Applying draw cards effect: ${effects.dr}`);
+        const availableCards = Object.entries(dealtCards)
+          .filter(([pos, card]) => cardOwners[parseInt(pos)] === undefined)
+          .map(([pos, card]) => ({ position: parseInt(pos), card }));
 
-    // Handle collect/pay each player (ce)
-    if (effects.ce !== undefined && effects.ce !== 0) {
-      console.log("handleMysteryCardEffect: Applying collect/pay each player", {
-        amount: effects.ce,
-      });
+        if (availableCards.length > 0) {
+          setPlayers((prev) => {
+            const newPlayers = [...prev];
+            const cardsToAdd = Math.min(effects.dr!, availableCards.length);
 
-      setPlayers((prev) => {
-        const newPlayers = [...prev];
+            for (let i = 0; i < cardsToAdd; i++) {
+              const randomIndex = Math.floor(
+                Math.random() * availableCards.length
+              );
+              const { position, card } = availableCards[randomIndex];
 
-        if (effects.ce! > 0) {
-          for (let i = 0; i < newPlayers.length; i++) {
-            if (i !== playerIndex) {
-              const payment = Math.min(effects.ce!, newPlayers[i].chips);
-              newPlayers[i].chips -= payment;
-              newPlayers[playerIndex].chips += payment;
+              newPlayers[safeIndex].collectedCards.push({ ...card });
+              newPlayers[safeIndex].boughtCards.push({
+                ...card,
+                position: position,
+              });
+
+              setCardOwners((prevOwners) => ({
+                ...prevOwners,
+                [position]: safeIndex,
+              }));
+
+              availableCards.splice(randomIndex, 1);
             }
-          }
-        } else {
-          const paymentPerPlayer = Math.abs(effects.ce!);
-          const totalPayment = paymentPerPlayer * 3;
-          const actualPayment = Math.min(
-            totalPayment,
-            newPlayers[playerIndex].chips
-          );
-          const perPlayer = Math.floor(actualPayment / 3);
 
-          newPlayers[playerIndex].chips -= actualPayment;
-          for (let i = 0; i < newPlayers.length; i++) {
-            if (i !== playerIndex) {
-              newPlayers[i].chips += perPlayer;
-            }
-          }
+            return newPlayers;
+          });
         }
+      }
 
-        console.log("handleMysteryCardEffect: Updated all player chips", {
-          effect: effects.ce,
+      // Handle skip turns (sk)
+      if (effects.sk !== undefined && effects.sk > 0) {
+        console.log(`⏭️ Applying skip turn effect: ${effects.sk}`);
+        let skipsRemaining = effects.sk;
+        const skipTurns = () => {
+          if (skipsRemaining > 0) {
+            setCurrentPlayerIndex((prev) => {
+              const nextIndex = (prev + 1) % players.length;
+              skipsRemaining--;
+              if (skipsRemaining > 0) {
+                setTimeout(skipTurns, 100);
+              }
+              return nextIndex;
+            });
+          }
+        };
+        skipTurns();
+      }
+
+      // Handle repeat turn (rt)
+      if (effects.rt === true) {
+        console.log(`🔄 Applying repeat turn effect`);
+        setHasExtraTurn(true);
+      }
+
+      // Handle collect/pay each player (ce)
+      if (effects.ce !== undefined && effects.ce !== 0) {
+        console.log(`🤝 Applying collect/pay effect: ${effects.ce}`);
+        setPlayers((prev) => {
+          const newPlayers = [...prev];
+
+          if (effects.ce! > 0) {
+            // Collect from each other player
+            for (let i = 0; i < newPlayers.length; i++) {
+              if (i !== safeIndex) {
+                const payment = Math.min(effects.ce!, newPlayers[i].chips);
+                newPlayers[i].chips -= payment;
+                newPlayers[safeIndex].chips += payment;
+              }
+            }
+          } else {
+            // Pay to each other player
+            const paymentPerPlayer = Math.abs(effects.ce!);
+            const totalPayment = paymentPerPlayer * (newPlayers.length - 1);
+            const actualPayment = Math.min(
+              totalPayment,
+              newPlayers[safeIndex].chips
+            );
+            const perPlayer = Math.floor(
+              actualPayment / (newPlayers.length - 1)
+            );
+
+            newPlayers[safeIndex].chips -= actualPayment;
+            for (let i = 0; i < newPlayers.length; i++) {
+              if (i !== safeIndex) {
+                newPlayers[i].chips += perPlayer;
+              }
+            }
+          }
+
+          return newPlayers;
         });
-        return newPlayers;
-      });
-    }
+      }
 
-    // Close modal and handle turn continuation
-    setLandedMysteryCard(null);
-    setShowMysteryCardModal(false);
-    setShowVideoModal(false);
-    console.log("handleMysteryCardEffect: Cleared modals");
+      // Close modals
+      setShowVideoModal(false);
+      setLandedMysteryCard(null);
+      console.log(`Cleared modals`);
 
-    // If repeat turn effect, keep turn; otherwise end turn
-    if (effects.rt === true) {
-      console.log("handleMysteryCardEffect: Repeat turn effect, keeping turn");
-    } else if (hasExtraTurn) {
-      console.log(
-        "handleMysteryCardEffect: Player rolled doubles, keeping turn"
-      );
-      setHasExtraTurn(false);
-      setHasPair(false);
-    } else {
-      console.log("handleMysteryCardEffect: Ending turn");
-      endTurn();
-    }
-  };
+      // Handle turn continuation
+      if (effects.rt === true) {
+        console.log(`🔄 Repeat turn - keeping turn`);
+        setHasExtraTurn(true);
+        setHasPair(false);
+      } else if (hasPair) {
+        console.log(`🎲 Doubles rolled - player keeps turn`);
+        setHasExtraTurn(true);
+        setHasPair(false);
+      } else {
+        console.log(`✅ Ending turn`);
+        setHasExtraTurn(false);
+        endTurn();
+      }
+    },
+    [
+      currentPlayerIndex,
+      hasPair,
+      dealtCards,
+      cardOwners,
+      players.length,
+      endTurn,
+    ]
+  );
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -892,29 +878,41 @@ function LocalGame() {
                 return keep;
               });
 
-              const wildPositions =
+              let wildPositions =
                 updatedPlayers[playerIndex].wildCollectedAt || [];
               let wildsExpired = 0;
-
-              updatedPlayers[playerIndex].wildCollectedAt =
-                wildPositions.filter((wildPos) => {
-                  const keep = wildPos <= newPosition;
-                  if (!keep) {
-                    wildsExpired++;
-                    console.log("🃏 Wild card expired at position:", wildPos);
-                  }
-                  return keep;
-                });
+              const keptWilds = wildPositions.filter(
+                (wildPos) => wildPos !== newPosition
+              );
+              wildsExpired = wildPositions.length - keptWilds.length;
 
               if (wildsExpired > 0) {
                 updatedPlayers[playerIndex].wilds = Math.max(
                   0,
                   (updatedPlayers[playerIndex].wilds || 0) - wildsExpired
                 );
+                updatedPlayers[playerIndex].wildCollectedAt = keptWilds;
                 console.log(
-                  `🃏 ${wildsExpired} Wild card(s) expired for player ${playerIndex}`
+                  "wildsExpired Wild cards expired for player",
+                  playerIndex,
+                  "expired:",
+                  wildsExpired,
+                  "remaining wilds:",
+                  updatedPlayers[playerIndex].wilds
                 );
+              } else {
+                console.log(
+                  "No wild expirations on this lap for player",
+                  playerIndex
+                );
+                updatedPlayers[playerIndex].wildCollectedAt = keptWilds; // Still update the array even if no expirations
               }
+              console.log(
+                "Post-lap update - player wilds:",
+                updatedPlayers[playerIndex].wilds,
+                "collectedAt:",
+                updatedPlayers[playerIndex].wildCollectedAt
+              );
 
               console.log("handleMoveFromShoe: Updated jokers and wilds", {
                 playerIndex,
@@ -939,31 +937,68 @@ function LocalGame() {
         const finalPosition = (startPosition + total) % 64;
         console.log("handleMoveFromShoe: Final position", { finalPosition });
 
-        // Check if landed on Joker position
         if (isJokerPosition(finalPosition)) {
-          console.log("🃏 Player landed on Joker!");
-
+          console.log(
+            "Pre-joker check - player wilds:",
+            players[playerIndex]?.wilds,
+            "collectedAt:",
+            players[playerIndex]?.wildCollectedAt
+          );
+          console.log("Player landed on Joker!");
           setPlayers((prevPlayers) => {
             const updatedPlayers = [...prevPlayers];
-            updatedPlayers[playerIndex].wilds =
-              (updatedPlayers[playerIndex].wilds || 0) + 1;
+            const playerWilds = updatedPlayers[playerIndex].wilds || 0;
+            const collectedAt =
+              updatedPlayers[playerIndex].wildCollectedAt || [];
 
-            if (!updatedPlayers[playerIndex].wildCollectedAt) {
-              updatedPlayers[playerIndex].wildCollectedAt = [];
+            // Prevent duplicate collection
+            if (!collectedAt.includes(finalPosition)) {
+              updatedPlayers[playerIndex].wilds = playerWilds + 1;
+              updatedPlayers[playerIndex].wildCollectedAt = [
+                ...collectedAt,
+                finalPosition,
+              ];
+              console.log(
+                "handleMoveFromShoe Added wild to player",
+                playerIndex,
+                "wilds:",
+                updatedPlayers[playerIndex].wilds
+              );
+            } else {
+              console.log(
+                "handleMoveFromShoe Duplicate joker at position",
+                finalPosition,
+                "- skipping increment"
+              );
             }
-            updatedPlayers[playerIndex].wildCollectedAt!.push(finalPosition);
-
-            console.log("handleMoveFromShoe: Added wild to player", {
-              playerIndex,
-              wilds: updatedPlayers[playerIndex].wilds,
-              wildCollectedAt: updatedPlayers[playerIndex].wildCollectedAt,
-            });
+            console.log(
+              "Post-update - player wilds:",
+              updatedPlayers[playerIndex].wilds,
+              "collectedAt:",
+              updatedPlayers[playerIndex].wildCollectedAt
+            );
             return updatedPlayers;
           });
 
+          // Show modal briefly, then auto-continue (no effects to process)
           setLandedMysteryCard(JOKER_CARD);
           setShowMysteryCardModal(true);
-          return;
+
+          // Auto-close and advance turn after 2s
+          setTimeout(() => {
+            console.log("Wild card auto-processed - continuing turn");
+            setShowMysteryCardModal(false);
+            setLandedMysteryCard(null);
+            // Handle extras first, then end turn
+            if (hasExtraTurn) {
+              setHasExtraTurn(false);
+              setHasPair(false);
+            } else {
+              endTurn();
+            }
+          }, 2000); // Matches other mystery delays
+
+          return; // Skip other checks, but now auto-continues
         }
 
         // Check if landed on mystery card - DIRECT VIDEO MODAL
@@ -1307,15 +1342,6 @@ function LocalGame() {
     console.log("handleSellCards: Closed sell modal");
   };
 
-  const endTurn = () => {
-    console.log("endTurn: Ending turn for player", { currentPlayerIndex });
-    setCurrentPlayerIndex((prev) => {
-      const nextIndex = (prev + 1) % 4;
-      console.log("endTurn: Set next player", { nextIndex });
-      return nextIndex;
-    });
-  };
-
   const handleAutoPlay = () => {
     console.log("handleAutoPlay: Toggling auto-play", { isAutoPlaying });
     setIsAutoPlaying(!isAutoPlaying);
@@ -1349,48 +1375,56 @@ function LocalGame() {
     setShowMysteryCardModal(false);
     setPlayers([
       {
-        name: "Player 1 (♠)",
+        name: "Player 1",
         chips: 10000,
-        color: "#000000",
+        color: "000000",
         position: "bottom",
         collectedCards: [],
         boughtCards: [],
         boardPosition: 0,
-        suit: "♠",
+        suit: "",
         jokers: [],
+        wilds: 0,
+        wildCollectedAt: [],
       },
       {
-        name: "Player 2 (♥)",
+        name: "Player 2",
         chips: 10000,
-        color: "#DC143C",
+        color: "DC143C",
         position: "left",
         collectedCards: [],
         boughtCards: [],
         boardPosition: 16,
-        suit: "♥",
+        suit: "",
         jokers: [],
+        wilds: 0,
+        wildCollectedAt: [],
       },
       {
-        name: "Player 3 (♦)",
+        name: "Player 3",
         chips: 10000,
-        color: "#90EE90",
+        color: "90EE90",
         position: "top",
         collectedCards: [],
         boughtCards: [],
         boardPosition: 32,
-        suit: "♦",
+        suit: "",
         jokers: [],
+        wilds: 0,
+        wildCollectedAt: [],
       },
       {
-        name: "Player 4 (♣)",
+        name: "Player 4",
         chips: 10000,
-        color: "#ADD8E6",
+        color: "ADD8E6",
         position: "right",
         collectedCards: [],
         boughtCards: [],
         boardPosition: 48,
-        suit: "♣",
+        suit: "",
         jokers: [],
+        wilds: 0,
+        wildCollectedAt: [],
       },
     ]);
     console.log("handleReset: Game state reset");
@@ -1445,22 +1479,39 @@ function LocalGame() {
   }, [isAutoPlaying, penaltyInfo, currentPlayerIndex, players]);
 
   useEffect(() => {
-    console.log("useEffect: Auto-play for mystery card", {
+    console.log(
+      "useEffect: Auto-play for mystery card",
       isAutoPlaying,
       showMysteryCardModal,
-      landedMysteryCard,
-    });
+      landedMysteryCard
+    );
     if (isAutoPlaying && showMysteryCardModal && landedMysteryCard) {
       const timer = setTimeout(() => {
-        console.log("useEffect: Auto-play handling mystery card effect");
-        handleMysteryCardEffect(landedMysteryCard);
+        if (landedMysteryCard.deck === "Joker") {
+          // Wild card: auto-continue without effects
+          setShowMysteryCardModal(false);
+          setLandedMysteryCard(null);
+          if (hasExtraTurn) {
+            setHasExtraTurn(false);
+            setHasPair(false);
+          } else {
+            endTurn();
+          }
+        } else {
+          // Other mystery cards
+          handleMysteryCardEffect(landedMysteryCard);
+        }
       }, 2000);
-      return () => {
-        console.log("useEffect: Clearing mystery card timer");
-        clearTimeout(timer);
-      };
+      return () => clearTimeout(timer);
     }
-  }, [isAutoPlaying, showMysteryCardModal, landedMysteryCard]);
+  }, [
+    isAutoPlaying,
+    showMysteryCardModal,
+    landedMysteryCard,
+    hasExtraTurn,
+    hasPair,
+    endTurn,
+  ]);
 
   useEffect(() => {
     console.log("useEffect: Auto-play main loop", {
@@ -1548,7 +1599,7 @@ function LocalGame() {
             : "👥 Rotate: Profiles"}
         </button>
 
-        {gameStarted && (
+        {/* {gameStarted && (
           <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border-2 border-slate-500">
             <div className="text-white text-xs font-semibold mb-2">
               Auto Play
@@ -1604,7 +1655,7 @@ function LocalGame() {
               </button>
             </div>
           </div>
-        )}
+        )} */}
 
         {gameStarted && (
           <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border-2 border-slate-500">
@@ -2535,7 +2586,7 @@ function LocalGame() {
                     </div>
                   )}
                 </div>
-                <button
+                {/* <button
                   onClick={() => {
                     console.log(
                       "Button: Continue mystery card effect",
@@ -2546,7 +2597,7 @@ function LocalGame() {
                   className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
                 >
                   Continue
-                </button>
+                </button> */}
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { PlayerProfile } from "./components/PlayerProfile";
 import { PlayerIcon } from "./components/PlayerIcon";
+import { PlayerProfile } from "./components/PlayerProfile";
 import { PenaltyModal } from "./components/PenaltyModal";
 import { AuctionModal } from "./components/AuctionModal";
 import { SellCardsModal } from "./components/SellCardsModal";
@@ -11,6 +11,7 @@ import MultiplayerLobby from "./components/MultiplayerLobby";
 import WaitingRoom from "./components/WaitingRoom";
 import { useNavigate } from "react-router-dom";
 import LocalGame from "./LocalGame"; // Adjust path as needed
+
 import {
   MYSTERY_CARDS,
   BOMB_CARDS,
@@ -19,7 +20,6 @@ import {
   getRandomMysteryCard,
   QUESTION_MARK_POSITIONS,
   initializeJokerPositions,
-  getJokerPositions,
   isJokerPosition,
 } from "./data/mysteryCards";
 
@@ -42,32 +42,43 @@ interface Player {
   boughtCards: Array<{ suit: string; value: string; position: number }>;
   boardPosition: number;
   suit: string;
-  isEliminated: boolean;
-  wildCollectedAt: number[]; // Positions where wilds were collected
-  lastBoardPosition: number; // Track for lap completion
-  lapsCompleted: number; // Track full laps (0-based)
   jokers: Array<{ collectedAtPosition: number }>;
   wilds?: number;
-  wildStartPosition?: number;
+  wildCollectedAt?: number[];
+  isEliminated?: boolean;
+  lastBoardPosition?: number;
+  lapsCompleted?: number;
 }
 
 function App() {
-  const navigate = useNavigate(); // ADD THIS LINE
+  const navigate = useNavigate();
 
-  // 🔥 STATE
+  // 🔥 GAME MODE STATE
   const [gameMode, setGameMode] = useState<"select" | "waiting" | "playing">(
     "select"
   );
-  const [showLocalGame, setShowLocalGame] = useState(false);
+  const [landedMysteryCard, setLandedMysteryCard] =
+    useState<MysteryCard | null>(null);
 
+  // 🔥 MULTIPLAYER STATE
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [currentUsername, setCurrentUsername] = useState<string>("Player");
   const [isHost, setIsHost] = useState(false);
+  const [showLocalGame, setShowLocalGame] = useState(false);
+  // 🔥 AUDIO STATE
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.3);
 
-  // GAME STATE
-  const [rotation, setRotation] = useState({ x: 45, y: 0, z: 0 });
+  // 🔥 GAME STATE
+  const [rotation, setRotation] = useState({ x: 60, y: 0, z: 0 });
+  const [boardRotation, setBoardRotation] = useState(0);
+  const [profileRotation, setProfileRotation] = useState(0);
+  const [rotationMode, setRotationMode] = useState<"board" | "profiles">(
+    "board"
+  );
   const [baseRotation, setBaseRotation] = useState(0);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -82,8 +93,19 @@ function App() {
   const [playerPositions, setPlayerPositions] = useState<number[]>([
     0, 16, 32, 48,
   ]);
-  const waitingRoomSubsRef = useRef<any>(null);
 
+  const log = useCallback((emoji: string, message: string, data?: any) => {
+    const timestamp = new Date().toISOString().split("T")[1].substring(0, 12);
+    console.log(`[${timestamp}] ${emoji} ${message}`, data || "");
+  }, []);
+
+  const handlePlayLocal = useCallback(() => {
+    log("🎮", "SWITCHING TO LOCAL MODE");
+    setShowLocalGame(true);
+    setGameMode("playing"); // Or create a new 'local' mode
+  }, [log]);
+  // 🔥 INITIALIZE GAME
+  const waitingRoomSubsRef = useRef<any>(null);
   const [isMoving, setIsMoving] = useState(false);
   const [hasPair, setHasPair] = useState(false);
   const [invertScroll, setInvertScroll] = useState(false);
@@ -117,9 +139,14 @@ function App() {
   const [mysteryCardPositions, setMysteryCardPositions] = useState<{
     [position: number]: MysteryCard;
   }>({});
-  const [showMysteryCard, setShowMysteryCard] = useState<MysteryCard | null>(
-    null
-  );
+  const [showMysteryCardModal, setShowMysteryCardModal] = useState(false);
+  const [currentDiceTotal, setCurrentDiceTotal] = useState<number | null>(null);
+  const [hasExtraTurn, setHasExtraTurn] = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [videoPath, setVideoPath] = useState<string>("");
+  const [videoCardType, setVideoCardType] = useState<
+    "bomb" | "lightning" | null
+  >(null);
 
   // 🔥 REFS - SOURCE OF TRUTH
   const subscriptionRef = useRef<any>(null);
@@ -138,11 +165,13 @@ function App() {
     number | null
   >(null);
 
-  // 🔥 LOGGING WRAPPER
-  const log = useCallback((emoji: string, message: string, data?: any) => {
-    const timestamp = new Date().toISOString().split("T")[1].substring(0, 12);
-    console.log(`[${timestamp}] ${emoji} ${message}`, data || "");
-  }, []);
+  // Corner positioning adjustments
+  const cornerOffsets = {
+    bottomRight: { x: 190, y: 10 },
+    bottomLeft: { x: -10, y: 195 },
+    topLeft: { x: -195, y: -10 },
+    topRight: { x: 10, y: -195 },
+  };
 
   // 🔥 SAFE INDEX WITH LOGGING
   const getSafePlayerIndex = useCallback(
@@ -158,16 +187,64 @@ function App() {
     [log]
   );
 
-  // 🏆 CHECK GAME OVER - LAST PLAYER STANDING WINS
-  const checkGameOver = useCallback(() => {
+  // 🏆 CHECK GAME OVER
+  const checkGameOver = useCallback(async () => {
     const activePlayers = playersRef.current.filter(
       (p) => !p.isEliminated && p.chips > 0
     );
 
     if (activePlayers.length === 1) {
-      log("🏆", "WINNER FOUND", { winner: activePlayers[0].name });
-      setWinner(activePlayers[0]);
+      const winnerPlayer = activePlayers[0];
+      log("🏆", "WINNER FOUND", { winner: winnerPlayer.name });
+      setWinner(winnerPlayer);
       setGameOver(true);
+
+      // Award winner the pool of chips
+      const totalPlayers = playersRef.current.length;
+      const poolAmount = 15000 * totalPlayers;
+
+      log("💰", "AWARDING WINNER", {
+        winner: winnerPlayer.name,
+        poolAmount,
+      });
+
+      // Find winner's user_id from roomPlayers
+      const winnerIndex = playersRef.current.findIndex(
+        (p) => p.name === winnerPlayer.name
+      );
+      const winnerRoomPlayer = roomPlayers[winnerIndex];
+
+      if (winnerRoomPlayer && supabase) {
+        try {
+          // Get current balance from user_wallet
+          const { data: wallet } = await supabase
+            .from("user_wallet")
+            .select("chips")
+            .eq("user_id", winnerRoomPlayer.user_id)
+            .single();
+
+          const currentBalance = wallet?.chips || 0;
+          const newBalance = currentBalance + poolAmount;
+
+          // Update winner's chips in user_wallet
+          const { error } = await supabase
+            .from("user_wallet")
+            .update({ chips: newBalance })
+            .eq("user_id", winnerRoomPlayer.user_id);
+
+          if (error) {
+            console.error("Failed to award winner:", error);
+          } else {
+            log(
+              "💰",
+              `Awarded ${poolAmount} chips to ${winnerPlayer.name}. New balance: ${newBalance}`
+            );
+          }
+        } catch (err) {
+          console.error("Error awarding winner:", err);
+        }
+      }
+
       return true;
     }
 
@@ -178,73 +255,179 @@ function App() {
     }
 
     return false;
-  }, [log]);
+  }, [log, roomPlayers]);
+
+  // Disable body scrolling
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
+  // Audio setup
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.loop = true;
+      audioRef.current.volume = musicVolume;
+      audioRef.current.src =
+        "/games/pokeropoly/sound/poker-opoly-them-music.mp3";
+
+      audioRef.current.addEventListener("ended", () => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+        }
+      });
+
+      audioRef.current.addEventListener("error", (e) => {
+        console.error("Audio loading error:", e);
+      });
+    }
+
+    if (gameStarted && !isMusicPlaying) {
+      audioRef.current.play().catch((err) => {
+        console.error("Audio play error:", err);
+      });
+      setIsMusicPlaying(true);
+    } else if (!gameStarted && isMusicPlaying) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsMusicPlaying(false);
+    }
+  }, [gameStarted, isMusicPlaying, musicVolume]);
 
   const applyMysteryCardEffects = useCallback(
-    (card: MysteryCard, playerIndex: number) => {
+    async (card: MysteryCard, playerIndex: number) => {
       const effects = card.effects;
+      let chipGain = 0; // Track net chip gain for wallet sync
 
       setPlayers((prev) => {
         const updated = [...prev];
+
+        // SAFETY CHECK - validate playerIndex
+        if (playerIndex < 0 || playerIndex >= updated.length) {
+          log(
+            "❌",
+            `INVALID PLAYER INDEX: ${playerIndex} (total: ${updated.length})`
+          );
+          return prev;
+        }
+
         const player = updated[playerIndex];
+        if (!player) {
+          log("❌", `PLAYER NOT FOUND AT INDEX ${playerIndex}`);
+          return prev;
+        }
 
-        // Chip bonus/penalty
+        // Apply chip changes
         if (effects.cb) {
+          const oldChips = player.chips;
           player.chips = Math.max(0, player.chips + effects.cb);
-          // log("💰", `${player.name} chips \${effects.cb > 0 ? '+' : ''}\${effects.cb}`);
+          chipGain = player.chips - oldChips; // Calculate actual gain
 
-          // Check elimination
-          if (player.chips <= 0) {
+          if (player.chips === 0) {
             player.isEliminated = true;
-            // log("💀", `${player.name} ELIMINATED by mystery card\`);
+          }
+
+          log("💰", `Mystery card chip change: ${chipGain}`);
+        }
+
+        // Apply movement
+        if (effects.mb) {
+          const newPos = (player.boardPosition + effects.mb + 64) % 64;
+          player.boardPosition = newPos;
+          player.lastBoardPosition = newPos;
+        }
+
+        // Apply teleport
+        if (effects.mt) {
+          const cornerMap: { [key: string]: number } = {
+            "Hearts Home": 0,
+            "Spades Home": 16,
+            "Diamonds Home": 32,
+            "Clubs Home": 48,
+          };
+          if (cornerMap[effects.mt]) {
+            player.boardPosition = cornerMap[effects.mt];
+            player.lastBoardPosition = cornerMap[effects.mt];
           }
         }
 
-        // Collect/pay each player
-        if (effects.ce) {
+        // Apply collect from each player
+        if (effects.ce && effects.ce !== 0) {
           const amount = effects.ce;
+          const oldPlayerChips = player.chips;
+
           updated.forEach((p, idx) => {
             if (idx !== playerIndex && !p.isEliminated) {
               if (amount > 0) {
-                // Collect from each player
+                // Collect from other players
                 const collectAmount = Math.min(Math.abs(amount), p.chips);
                 p.chips = Math.max(0, p.chips - collectAmount);
                 player.chips += collectAmount;
               } else {
-                // Pay each player
+                // Pay to other players
                 const payAmount = Math.min(Math.abs(amount), player.chips);
                 player.chips = Math.max(0, player.chips - payAmount);
                 p.chips += payAmount;
               }
             }
           });
-          // log("💸", `${player.name} \${amount > 0 ? 'collected' : 'paid'} \${Math.abs(amount)} per player\`);
+
+          // Track net chip gain from collect/pay
+          chipGain += (player.chips - oldPlayerChips);
+          log("💰", `Collect/Pay chip change: ${player.chips - oldPlayerChips}`);
         }
 
         playersRef.current = updated;
         return updated;
       });
 
+      // Sync chip gain to wallet if positive
+      if (chipGain > 0 && roomPlayers[playerIndex] && supabase) {
+        const playerUserId = roomPlayers[playerIndex].user_id;
+
+        try {
+          const { data: wallet } = await supabase
+            .from("user_wallet")
+            .select("chips")
+            .eq("user_id", playerUserId)
+            .single();
+
+          const currentBalance = wallet?.chips || 0;
+          const newBalance = currentBalance + chipGain;
+
+          await supabase
+            .from("user_wallet")
+            .update({ chips: newBalance })
+            .eq("user_id", playerUserId);
+
+          log("💰", `Synced ${chipGain} chips to wallet. New balance: ${newBalance}`);
+        } catch (err) {
+          console.error("Error syncing chips to wallet:", err);
+        }
+      }
+
       setTimeout(() => checkGameOver(), 1000);
     },
-    [log, checkGameOver]
+    [log, checkGameOver, roomPlayers]
   );
 
   const checkWildExpiration = useCallback(
     (player: Player, newPosition: number) => {
-      const oldPosition = player.lastBoardPosition;
+      const oldPosition = player.lastBoardPosition || player.boardPosition;
 
-      // Check if player crossed position 0 (completed a lap)
       if (oldPosition > 50 && newPosition < 14) {
-        player.lapsCompleted += 1;
-        // log("🔄", `${player.name} completed lap \${player.lapsCompleted}`);
+        player.lapsCompleted = (player.lapsCompleted || 0) + 1;
 
-        // Expire all wilds after completing 1 lap
-        if (player.wilds > 0) {
+        if (player.wilds && player.wilds > 0) {
           const expiredCount = player.wilds;
           player.wilds = 0;
           player.wildCollectedAt = [];
-          // log("⏰", `${player.name} lost \${expiredCount} expired wild(s)\`);
+          log("⏰", `${player.name} lost ${expiredCount} expired wild(s)`);
         }
       }
 
@@ -254,46 +437,39 @@ function App() {
     [log]
   );
 
-  const handlePlayLocal = useCallback(() => {
-    log("🎮", "SWITCHING TO LOCAL MODE");
-    setShowLocalGame(true);
-    setGameMode("playing"); // Or create a new 'local' mode
-  }, [log]);
-  // 🔥 INITIALIZE GAME
-
   const initializeMysteryCards = useCallback(() => {
     const mysteryMap: { [position: number]: MysteryCard } = {};
     const jokerCount = Math.floor(Math.random() * 3) + 1;
     const shuffledPositions = [...QUESTION_MARK_POSITIONS].sort(
       () => Math.random() - 0.5
     );
+
+    const newJokerPositions: number[] = [];
+
     shuffledPositions.forEach((pos, index) => {
       const card = index < jokerCount ? JOKER_CARD : getRandomMysteryCard();
       mysteryMap[pos] = card;
-      log(
-        "🃏",
-        `initializeMysteryCards: Assigned to position ${pos}`,
-        JSON.stringify(card, null, 2)
-      );
+
+      // Track joker positions
+      if (card.deck === "Joker") {
+        newJokerPositions.push(pos);
+      }
     });
+
     setMysteryCardPositions(mysteryMap);
+    setJokerPositions(newJokerPositions); // Update joker positions state!
+
+    log("🃏", `Initialized ${newJokerPositions.length} joker positions:`, newJokerPositions);
+
     return mysteryMap;
   }, [log]);
 
   const initializeFromGameState = useCallback(
     async (room: Room) => {
       log("🎲", "=== INITIALIZING GAME STATE ===");
-      log("📊", `ROOM: ${room.id} STATUS: ${room.status}`);
 
       const freshPlayers = await RoomService.getRoomPlayers(room.id);
-      log(
-        "🔥",
-        `LOADED ${freshPlayers.length} PLAYERS`,
-        freshPlayers.map((p) => ({
-          name: p.player_name,
-          index: p.player_index,
-        }))
-      );
+      log("🔥", `LOADED ${freshPlayers.length} PLAYERS`);
 
       if (freshPlayers.length === 0) {
         log("❌", "NO PLAYERS LOADED - ABORTING");
@@ -304,27 +480,24 @@ function App() {
       setJokerPositions(room.game_state?.jokerPositions || []);
       initializeMysteryCards();
 
-      const gamePlayers: Player[] = freshPlayers.map((rp, idx) => {
-        const player = {
-          name: rp.player_name,
-          chips: 15000,
-          color:
-            rp.player_color ||
-            ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4"][idx],
-          position: ["bottom", "left", "top", "right"][idx] as any,
-          collectedCards: rp.collected_cards || [],
-          boughtCards: rp.bought_cards || [],
-          boardPosition: rp.board_position || [0, 16, 32, 48][idx],
-          suit: rp.player_suit || ["♠", "♥", "♦", "♣"][idx],
-          isEliminated: false,
-          wilds: 0,
-          wildCollectedAt: [],
-          lastBoardPosition: rp.board_position || [0, 16, 32, 48][idx],
-          lapsCompleted: 0,
-        };
-        log("👤", `PLAYER ${idx}: ${player.name} POS: ${player.boardPosition}`);
-        return player;
-      });
+      const gamePlayers: Player[] = freshPlayers.map((rp, idx) => ({
+        name: rp.player_name || "Unknown",
+        chips: 15000, // Everyone starts with 15,000 chips in game
+        color: ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4"][idx] || "#CCCCCC",
+        position: (["bottom", "left", "top", "right"][idx] || "bottom") as any,
+        collectedCards: Array.isArray(rp.collected_cards)
+          ? rp.collected_cards
+          : [],
+        boughtCards: Array.isArray(rp.bought_cards) ? rp.bought_cards : [],
+        boardPosition: [0, 16, 32, 48][idx] || 0,
+        suit: rp.player_suit || "♠",
+        isEliminated: rp.eliminated || false,
+        wilds: 0,
+        wildCollectedAt: [],
+        lastBoardPosition: [0, 16, 32, 48][idx] || 0,
+        lapsCompleted: 0,
+        jokers: [],
+      }));
 
       playersRef.current = gamePlayers;
       currentIndexRef.current = 0;
@@ -337,44 +510,40 @@ function App() {
       setCardOwners({});
       setHasRolledThisTurn(false);
 
-      log("✅", `INITIALIZED - Current: 0, Players: ${gamePlayers.length}`);
-      log("🎲", "=== INITIALIZATION COMPLETE ===");
+      log("✅", "INITIALIZATION COMPLETE");
     },
-    [log]
+    [log, initializeMysteryCards]
   );
 
-  // 💰 DEDUCT 15000 FROM PLAYER ACCOUNTS
   const deductChipsFromAccounts = async () => {
-    if (!currentRoom?.id || !currentRoom.room_players) return;
+    if (!currentRoom?.id || !roomPlayers) return;
 
-    for (const rp of currentRoom.room_players) {
+    for (const rp of roomPlayers) {
       try {
-        // Skip if already deducted
-        if (rp.chips_deducted) {
-          log("⏭️", `Chips already deducted for ${rp.player_name}`);
-          continue;
-        }
+        // Deduct from user_wallet
+        if (supabase) {
+          const { data: wallet } = await supabase
+            .from("user_wallet")
+            .select("chips")
+            .eq("user_id", rp.user_id)
+            .single();
 
-        // Calculate new balance
-        const newBalance = Math.max(0, (rp.chips || 0) - 15000);
+          const currentBalance = wallet?.chips || 0;
+          const newBalance = Math.max(0, currentBalance - 15000);
 
-        // Update database
-        const { error } = await supabase
-          .from("poker_opoly_players") // ✅ Your table name
-          .update({
-            chips: newBalance,
-            chips_deducted: true,
-          })
-          .eq("room_id", currentRoom.id) // ✅ room_id matches your schema
-          .eq("user_id", rp.user_id); // ✅ user_id matches your schema
+          const { error } = await supabase
+            .from("user_wallet")
+            .update({ chips: newBalance })
+            .eq("user_id", rp.user_id);
 
-        if (error) {
-          console.error("Failed to deduct chips:", rp.player_name, error);
-        } else {
-          log(
-            "💰",
-            `Deducted 15000 from ${rp.player_name}. New balance: ${newBalance}`
-          );
+          if (error) {
+            console.error("Failed to deduct chips:", rp.player_name, error);
+          } else {
+            log(
+              "💰",
+              `Deducted 15000 from ${rp.player_name}. New balance: ${newBalance}`
+            );
+          }
         }
       } catch (err) {
         console.error("Error deducting chips:", err);
@@ -382,7 +551,6 @@ function App() {
     }
   };
 
-  // ✅ FIXED: Moved to useEffect to prevent infinite loop
   const hasDeductedChips = useRef(false);
 
   useEffect(() => {
@@ -395,7 +563,7 @@ function App() {
       deductChipsFromAccounts();
       hasDeductedChips.current = true;
     }
-  }, [gameMode, currentRoom?.id, deductChipsFromAccounts, log]);
+  }, [gameMode, currentRoom?.id]);
 
   const applyBuyCard = useCallback(
     (data: any) => {
@@ -411,10 +579,7 @@ function App() {
 
       const currentOwner = cardOwners[position];
       if (currentOwner !== undefined) {
-        log("⚠️", "CARD ALREADY OWNED - ABORTING", {
-          position,
-          owner: currentOwner,
-        });
+        log("⚠️", "CARD ALREADY OWNED - ABORTING");
         return;
       }
 
@@ -437,21 +602,14 @@ function App() {
       }
 
       setCardOwners((prev) => {
-        if (prev[position] !== undefined) {
-          log("⚠️", "RACE CONDITION - CARD OWNED", { position });
-          return prev;
-        }
+        if (prev[position] !== undefined) return prev;
         return { ...prev, [position]: safeIndex };
       });
 
       setPlayers((prev) => {
-        if (prev.length === 0 || !prev[safeIndex]) {
-          log("❌", "PLAYER MISSING IN STATE UPDATE", { safeIndex });
-          return prev;
-        }
+        if (prev.length === 0 || !prev[safeIndex]) return prev;
 
         const player = prev[safeIndex];
-
         const hasCard = player.boughtCards.some(
           (c) =>
             c.suit === card.suit &&
@@ -459,10 +617,7 @@ function App() {
             c.position === position
         );
 
-        if (hasCard) {
-          log("⚠️", "DUPLICATE BUY BLOCKED IN STATE UPDATE");
-          return prev;
-        }
+        if (hasCard) return prev;
 
         const updated = [...prev];
         const newChips = Math.max(0, player.chips - price);
@@ -474,12 +629,7 @@ function App() {
           isEliminated: newChips <= 0,
         };
 
-        if (newChips <= 0) {
-          log("💀", `${player.name} ELIMINATED - OUT OF CHIPS`);
-        }
-
         playersRef.current = updated;
-        log("✅", `BUY APPLIED - chips: ${updated[safeIndex].chips}`);
         return updated;
       });
     },
@@ -495,34 +645,28 @@ function App() {
       log("💸", "PAY PENALTY", { safePayer, safeReceiver, amount });
 
       setPlayers((prev) => {
-        if (prev.length === 0 || !prev[safePayer] || !prev[safeReceiver]) {
-          log("❌", "PENALTY PLAYERS NOT FOUND", {
-            safePayer,
-            safeReceiver,
-            length: prev.length,
-          });
+        if (prev.length === 0 || !prev[safePayer] || !prev[safeReceiver])
           return prev;
-        }
-        const updated = [...prev];
-        const newChips = Math.max(0, updated[safePayer].chips - amount);
-        updated[safePayer].chips = newChips;
-        updated[safePayer].isEliminated = newChips <= 0;
-        updated[safeReceiver].chips += amount;
 
-        if (newChips <= 0) {
-          log("💀", `${updated[safePayer].name} ELIMINATED AFTER PENALTY`);
-        }
+        const updated = [...prev];
+        const payerChips = updated[safePayer].chips;
+
+        // Only pay what the payer has available
+        const actualPayment = Math.min(amount, payerChips);
+
+        updated[safePayer].chips = payerChips - actualPayment;
+        updated[safePayer].isEliminated = updated[safePayer].chips <= 0;
+        updated[safeReceiver].chips += actualPayment;
+
+        log("💸", `Penalty paid: ${actualPayment} (owed: ${amount})`);
 
         playersRef.current = updated;
-        log("✅", "PENALTY APPLIED");
-
         setTimeout(() => checkGameOver(), 500);
-
         return updated;
       });
       setPenaltyInfo(null);
     },
-    [getSafePlayerIndex, log]
+    [getSafePlayerIndex, log, checkGameOver]
   );
 
   const endTurn = useCallback(async () => {
@@ -533,10 +677,7 @@ function App() {
 
     const safeCurrent = getSafePlayerIndex(currentIndexRef.current, "endTurn");
     const nextIndex = (safeCurrent + 1) % playersRef.current.length;
-    log(
-      "🔄",
-      `ENDING TURN: ${safeCurrent} → ${nextIndex} TOTAL: ${playersRef.current.length}`
-    );
+    log("🔄", `ENDING TURN: ${safeCurrent} → ${nextIndex}`);
 
     try {
       await RoomService.broadcastAction(
@@ -558,13 +699,126 @@ function App() {
     }
   }, [currentRoom, currentUserId, getSafePlayerIndex, log]);
 
+  const proceedWithMysteryCardEffect = useCallback(
+    async (mysteryCard: MysteryCard, playerIndex?: number) => {
+      const safeIndex =
+        playerIndex !== undefined ? playerIndex : currentIndexRef.current;
+      const effects = mysteryCard.effects;
+
+      log("🎯", "proceedWithMysteryCardEffect", {
+        mysteryCard: mysteryCard.title,
+        safeIndex,
+      });
+
+      // Apply effects
+      await applyMysteryCardEffects(mysteryCard, safeIndex);
+
+      // Close modals
+      setShowVideoModal(false);
+      setShowMysteryCardModal(false);
+      setLandedMysteryCard(null);
+
+      log("✅", "Cleared modals");
+
+      // Handle turn continuation
+      if (effects.rt === true) {
+        log("🔄", "Repeat turn - keeping turn");
+        setHasExtraTurn(true);
+        setHasPair(false);
+      } else if (hasPair) {
+        log("🎲", "Doubles rolled - player keeps turn");
+        setHasExtraTurn(true);
+        setHasPair(false);
+      } else {
+        log("✅", "Ending turn");
+        setHasExtraTurn(false);
+        endTurn();
+      }
+    },
+    [hasPair, applyMysteryCardEffects, endTurn, log]
+  );
+  const handleMysteryCardEffect = useCallback(
+    async (mysteryCard: MysteryCard, playerIndex?: number) => {
+      const safeIndex =
+        playerIndex !== undefined ? playerIndex : currentIndexRef.current;
+
+      log("🎴", `handleMysteryCardEffect: Processing ${mysteryCard.title}`, {
+        safeIndex,
+      });
+
+      // Broadcast mystery card action to all players
+      if (currentRoom) {
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            safeIndex,
+            "mysteryCard",
+            {
+              mysteryCard,
+              position: playerPositions[safeIndex],
+            }
+          );
+        } catch (error) {
+          log("❌", "Failed to broadcast mystery card", error);
+        }
+      }
+
+      // Show video if Bomb or Lightning card
+      if (mysteryCard.deck === "Bomb") {
+        setLandedMysteryCard(mysteryCard); // Set BEFORE showing video
+        setVideoPath("/games/pokeropoly/video/bomb.mp4");
+        setVideoCardType("bomb");
+        setShowVideoModal(true);
+        setShowMysteryCardModal(false);
+
+        const bombSound = new Audio(
+          "/games/pokeropoly/sound/bomb-explosion.mp3"
+        );
+        bombSound.volume = 0.9;
+        bombSound.play().catch((e) => console.log("Bomb sound failed", e));
+
+        setTimeout(() => {
+          proceedWithMysteryCardEffect(mysteryCard, safeIndex);
+        }, 5000);
+        return;
+      } else if (mysteryCard.deck === "Mystery") {
+        setLandedMysteryCard(mysteryCard); // Set BEFORE showing video
+        setVideoPath("/games/pokeropoly/video/lightning.mp4");
+        setVideoCardType("lightning");
+        setShowVideoModal(true);
+        setShowMysteryCardModal(false);
+
+        const lightningSound = new Audio(
+          "/games/pokeropoly/sound/lightning-strike.mp3"
+        );
+        lightningSound.volume = 0.9;
+        lightningSound
+          .play()
+          .catch((e) => console.log("Lightning sound failed", e));
+
+        setTimeout(() => {
+          proceedWithMysteryCardEffect(mysteryCard, safeIndex);
+        }, 5000);
+        return;
+      }
+
+      // For non-video mystery cards, show modal immediately
+      setLandedMysteryCard(mysteryCard);
+      setShowMysteryCardModal(true);
+    },
+    [
+      log,
+      currentRoom,
+      currentUserId,
+      playerPositions,
+      proceedWithMysteryCardEffect,
+    ]
+  );
+
   const handleMoveFromShoe = useCallback(
     async (total: number, isPair?: boolean) => {
       log("🚀", "=== MOVING START ===");
-      log(
-        "👥",
-        `PLAYERS: ${playersRef.current.length} INDEX: ${currentIndexRef.current}`
-      );
 
       if (playersRef.current.length === 0) {
         log("❌", "NO PLAYERS - CANNOT MOVE");
@@ -581,17 +835,20 @@ function App() {
         playersRef.current[safeIndex]?.boardPosition ||
         playerPositions[safeIndex] ||
         0;
-      log("📍", `START POSITION: ${currentPos}`);
 
       setIsMoving(true);
+      setCurrentDiceTotal(total);
+
+      const moveSound = new Audio(`/games/pokeropoly/sound/move-${total}.mp3`);
+      moveSound.volume = 0.5;
+      moveSound.play().catch((e) => console.log("Sound failed:", e));
+
       let movesMade = 0;
 
       const moveInterval = setInterval(() => {
-        log("🔄", `MOVE ${movesMade + 1}/${total}`);
-
         if (movesMade < total) {
+          const oldPos = (currentPos + movesMade) % 64;
           const newPos = (currentPos + movesMade + 1) % 64;
-          log("📍", `MOVING TO: ${newPos}`);
 
           setPlayerPositions((prev) => {
             const updated = [...prev];
@@ -609,6 +866,34 @@ function App() {
               ...updated[safeIndex],
               boardPosition: newPos,
             };
+
+            // Check for lap completion (matching LocalGame logic)
+            if (oldPos === 63 && newPos === 0) {
+              log("🏁", "Player completed a lap");
+
+              // Expire wilds collected at positions passed on this lap
+              const wildPositions = updated[safeIndex].wildCollectedAt || [];
+              let wildsExpired = 0;
+              const keptWilds = wildPositions.filter(
+                (wildPos) => wildPos !== newPos
+              );
+              wildsExpired = wildPositions.length - keptWilds.length;
+
+              if (wildsExpired > 0) {
+                updated[safeIndex].wilds = Math.max(
+                  0,
+                  (updated[safeIndex].wilds || 0) - wildsExpired
+                );
+                updated[safeIndex].wildCollectedAt = keptWilds;
+                log("⏰", `Wild cards expired for player ${safeIndex}`, {
+                  expired: wildsExpired,
+                  remaining: updated[safeIndex].wilds,
+                });
+              } else {
+                updated[safeIndex].wildCollectedAt = keptWilds;
+              }
+            }
+
             playersRef.current = updated;
             return updated;
           });
@@ -617,79 +902,33 @@ function App() {
         } else {
           clearInterval(moveInterval);
           setIsMoving(false);
+          setCurrentDiceTotal(null);
+
           const finalPosition = (currentPos + total) % 64;
-          log("🎯", `FINAL POSITION: ${finalPosition}`);
 
-          const card = dealtCards[finalPosition];
-          const owner = cardOwners[finalPosition];
-          log("🎯", "LANDED ON", { finalPosition, card, owner });
-
-          // Check if landed on Joker position
           if (isJokerPosition(finalPosition)) {
-            console.log(
-              "🃏 Player landed on Joker at position:",
-              finalPosition
-            );
+            log("🃏", "Player landed on Joker!");
 
             setPlayers((prev) => {
               const updated = [...prev];
-              updated[safeIndex] = {
-                ...updated[safeIndex],
-                wilds: (updated[safeIndex].wilds || 0) + 1,
-                wildCollectedAt: [
-                  ...(updated[safeIndex].wildCollectedAt || []),
-                  finalPosition,
-                ],
-              };
-              return updated;
-            });
+              const playerWilds = updated[safeIndex].wilds || 0;
+              const collectedAt = updated[safeIndex].wildCollectedAt || [];
 
-            // Show Joker modal
-            setShowMysteryCard(JOKER_CARD);
-
-            // Auto-close and end turn
-            setTimeout(() => {
-              setShowMysteryCard(null);
-              setHasRolledThisTurn(false);
-              const nextIndex = (safeIndex + 1) % playersRef.current.length;
-              setCurrentPlayerIndex(nextIndex);
-              currentIndexRef.current = nextIndex;
-            }, 3000);
-
-            return; // Don't process other tile logic
-          }
-
-          // CHECK FOR MYSTERY CARD (existing code continues here)
-          // ✅ CHECK FOR MYSTERY CARD
-          const mysteryCard = mysteryCardPositions[finalPosition];
-
-          if (mysteryCard) {
-            log("❓", "LANDED ON MYSTERY CARD", mysteryCard.title);
-            setShowMysteryCard(mysteryCard);
-
-            // Update player state for mystery card
-            setPlayers((prev) => {
-              const updated = [...prev];
-
-              // Check for wild expiration
-              updated[safeIndex] = checkWildExpiration(
-                updated[safeIndex],
-                finalPosition
-              );
-
-              // Handle Joker collection
-              if (mysteryCard.deck === "Joker") {
+              // Prevent duplicate collection
+              if (!collectedAt.includes(finalPosition)) {
                 updated[safeIndex] = {
                   ...updated[safeIndex],
-                  wilds: updated[safeIndex].wilds + 1,
-                  wildCollectedAt: [
-                    ...updated[safeIndex].wildCollectedAt,
-                    finalPosition,
-                  ],
+                  wilds: playerWilds + 1,
+                  wildCollectedAt: [...collectedAt, finalPosition],
                 };
                 log(
                   "🃏",
-                  `${updated[safeIndex].name} collected a WILD! Total: ${updated[safeIndex].wilds}`
+                  `Added wild to player ${safeIndex}, wilds: ${updated[safeIndex].wilds}`
+                );
+              } else {
+                log(
+                  "⚠️",
+                  `Duplicate joker at position ${finalPosition} - skipping increment`
                 );
               }
 
@@ -697,113 +936,152 @@ function App() {
               return updated;
             });
 
-            // Apply mystery card effects
-            applyMysteryCardEffects(mysteryCard, safeIndex);
+            // Show modal briefly, then auto-continue (no effects to process)
+            setLandedMysteryCard(JOKER_CARD);
+            setShowMysteryCardModal(true);
 
-            // Auto-close and end turn after 3 seconds
+            // Auto-close and advance turn after 2s
             setTimeout(() => {
-              setShowMysteryCard(null);
-              setHasRolledThisTurn(false);
+              log("🃏", "Wild card auto-processed - continuing turn");
+              setShowMysteryCardModal(false);
+              setLandedMysteryCard(null);
 
-              const nextIndex = (safeIndex + 1) % playersRef.current.length;
-              setCurrentPlayerIndex(nextIndex);
-              currentIndexRef.current = nextIndex;
-              log("➡️", `AUTO NEXT TURN: Player ${nextIndex}`);
-            }, 3000);
-          } else if (card && owner !== undefined && owner !== safeIndex) {
-            log("⚠️", "PENALTY TRIGGERED");
-            const ownerPlayer = playersRef.current[owner];
-
-            // Get owner's bought cards (these form potential poker hands)
-            const ownerBoughtCards = ownerPlayer.boughtCards.filter(
-              (c): c is Card => c !== null
-            );
-
-            log("💸", "CALCULATING PENALTY");
-            log("💸", "Landed card:", card);
-            log("💸", "Owner cards:", ownerBoughtCards.length);
-
-            // ✅ CORRECT - Pass the landed CARD and owner's cards
-            const { penalty, hand } = calculatePenalty(card, ownerBoughtCards);
-
-            log("💸", "Penalty calculated:", penalty);
-            log("💸", "Hand detected:", hand || "None");
-
-            // Get the hand cards for display if there's a poker hand
-            let handCards: Card[] = [];
-            if (hand && hand !== "High Card") {
-              const handResult = detectPokerHand(ownerBoughtCards);
-              if (handResult && handResult.cards) {
-                handCards = handResult.cards;
+              // Handle extras first, then end turn
+              if (hasExtraTurn) {
+                setHasExtraTurn(false);
+                setHasPair(false);
+              } else {
+                endTurn();
               }
-            }
+            }, 2000); // Matches LocalGame 2s delay
 
-            log("💸", "Hand cards for display:", handCards.length);
-
-            setPenaltyInfo({
-              card,
-              penalty,
-              hand,
-              handCards,
-              ownerIndex: owner,
-            });
-          } else if (card && owner === undefined) {
-            log("💳", "SETTING LANDING CARD", card);
-            setLandedCard(card);
-          } else {
-            log("🏁", "LANDED ON EMPTY SPACE - WAITING FOR MANUAL END TURN");
-            setLandedCard(null);
-            setPenaltyInfo(null);
+            return;
           }
-          log("🚀", "=== MOVING COMPLETE ===");
+
+          const mysteryCard = mysteryCardPositions[finalPosition];
+
+          if (mysteryCard) {
+            log("❓", "LANDED ON MYSTERY CARD", mysteryCard.title);
+
+            setPlayers((prev) => {
+              const updated = [...prev];
+              updated[safeIndex] = checkWildExpiration(
+                updated[safeIndex],
+                finalPosition
+              );
+
+              if (mysteryCard.deck === "Joker") {
+                updated[safeIndex] = {
+                  ...updated[safeIndex],
+                  wilds: (updated[safeIndex].wilds || 0) + 1,
+                  wildCollectedAt: [
+                    ...(updated[safeIndex].wildCollectedAt || []),
+                    finalPosition,
+                  ],
+                };
+              }
+
+              playersRef.current = updated;
+              return updated;
+            });
+
+            handleMysteryCardEffect(mysteryCard);
+          } else {
+            const card = dealtCards[finalPosition];
+            const owner = cardOwners[finalPosition];
+
+            if (card && owner !== undefined && owner !== safeIndex) {
+              const ownerPlayer = playersRef.current[owner];
+              const ownerBoughtCards = ownerPlayer.boughtCards.filter(
+                (c): c is any => c !== null
+              );
+
+              // Include wilds in penalty calculation (matching LocalGame)
+              const { penalty, hand } = calculatePenalty(
+                card,
+                ownerPlayer.collectedCards,
+                ownerBoughtCards,
+                ownerPlayer.wilds || 0
+              );
+              let handCards: any[] = [];
+
+              if (hand && hand !== "High Card") {
+                const handResult = detectPokerHand(
+                  ownerPlayer.collectedCards,
+                  ownerPlayer.wilds || 0
+                );
+                if (handResult && handResult.cards) {
+                  handCards = handResult.cards;
+                }
+              }
+
+              setPenaltyInfo({
+                card,
+                penalty,
+                hand,
+                handCards,
+                ownerIndex: owner,
+              });
+            } else if (card && owner === undefined) {
+              setLandedCard(card);
+            } else {
+              log("🏁", "LANDED ON EMPTY SPACE");
+              setLandedCard(null);
+              setPenaltyInfo(null);
+
+              // Auto-end turn after landing on empty space
+              setTimeout(() => {
+                if (!hasPair && !hasExtraTurn) {
+                  endTurn();
+                }
+              }, 500);
+            }
+          }
         }
       }, 300);
     },
     [
       dealtCards,
       cardOwners,
-      endTurn,
       playerPositions,
       getSafePlayerIndex,
       log,
       mysteryCardPositions,
       checkWildExpiration,
-      applyMysteryCardEffects,
+      handleMysteryCardEffect,
+      hasPair,
+      hasExtraTurn,
+      endTurn,
     ]
   );
 
   const handleDrawFromShoe = useCallback(
     async (total: number, isPair: boolean) => {
       if (!currentRoom || isRolling || playersRef.current.length === 0) {
-        log("⏹️", "ROLL SKIPPED", {
-          room: !!currentRoom,
-          rolling: isRolling,
-          players: playersRef.current.length,
-        });
+        console.log(`🛑 ROLL SKIPPED`);
         return;
       }
 
       const safeIndex = getSafePlayerIndex(currentIndexRef.current, "rollDice");
-
       const isMyTurn = roomPlayers[safeIndex]?.user_id === currentUserId;
-      log("🎲", "ROLL CHECK", {
-        safeIndex,
-        isMyTurn,
-        userId: currentUserId,
-        playerUserId: roomPlayers[safeIndex]?.user_id,
-      });
+
+      console.log(
+        `🎲 ROLL CHECK | Player: ${safeIndex} | My Turn: ${isMyTurn} | Doubles: ${isPair}`
+      );
 
       if (!isMyTurn) {
-        log("❌", "NOT YOUR TURN - ROLL BLOCKED");
+        console.log(`🚫 NOT YOUR TURN - ROLL BLOCKED`);
         return;
       }
 
-      currentIndexRef.current = safeIndex;
       setCurrentPlayerIndex(safeIndex);
       setIsRolling(true);
       setHasRolledThisTurn(true);
+      setHasPair(isPair); // SET IT HERE - important!
 
-      log("🎲", `ROLL BY PLAYER ${safeIndex} Total: ${total} Pair: ${isPair}`);
+      console.log(
+        `🎰 ROLLING | Player ${safeIndex} | Total: ${total} | Pair: ${isPair}`
+      );
 
       try {
         await RoomService.broadcastAction(
@@ -813,12 +1091,10 @@ function App() {
           "rollDice",
           { total, isPair }
         );
-        log("✅", "ROLL BROADCASTED");
 
-        log("🚀", "PROCESSING OWN MOVEMENT");
         await handleMoveFromShoe(total, isPair);
       } catch (error) {
-        log("❌", "ROLL BROADCAST FAILED", error);
+        console.log(`❌ ROLL BROADCAST FAILED`, error);
       } finally {
         setTimeout(() => setIsRolling(false), 2000);
       }
@@ -840,11 +1116,6 @@ function App() {
       actionQueueRef.current.length === 0 ||
       isMoving
     ) {
-      log("⏸️", "PROCESSING BLOCKED", {
-        isProcessing: isProcessingRef.current,
-        queueLength: actionQueueRef.current.length,
-        isMoving,
-      });
       return;
     }
 
@@ -858,52 +1129,33 @@ function App() {
         `action-${action.action_type}`
       );
 
-      log("🎮", "=== PROCESSING ACTION ===");
-      log(
-        "📥",
-        `TYPE: ${action.action_type} PLAYER: ${safeIndex}`,
-        action.action_data
-      );
-
       try {
         switch (action.action_type) {
           case "rollDice":
-            log("🎲", "PROCESSING ROLL DICE", {
-              total: action.action_data.total,
-              isPair: action.action_data.isPair,
-            });
             await handleMoveFromShoe(
               action.action_data.total,
               action.action_data.isPair
             );
-            log("✅", "ROLL DICE COMPLETE");
             break;
 
           case "buyCard":
-            log("💳", "PROCESSING BUY CARD");
             applyBuyCard(action.action_data);
-            log("✅", "BUY CARD COMPLETE");
             break;
 
           case "endTurn":
-            log("🔄", "PROCESSING END TURN");
             const nextIndex = action.action_data.next_player_index || 0;
             currentIndexRef.current = nextIndex;
             setCurrentPlayerIndex(nextIndex);
             setHasRolledThisTurn(false);
             setLandedCard(null);
             setPenaltyInfo(null);
-            log("✅", `END TURN COMPLETE - NEW INDEX: ${nextIndex}`);
             break;
 
           case "payPenalty":
-            log("💸", "PROCESSING PAY PENALTY");
             applyPayPenalty(action.action_data);
-            log("✅", "PAY PENALTY COMPLETE");
             break;
 
           case "startAuction":
-            log("🔨", "PROCESSING START AUCTION");
             const myPlayerIndex = roomPlayers.findIndex(
               (p) => p.user_id === currentUserId
             );
@@ -915,20 +1167,16 @@ function App() {
             }
             setAuctionInitiatorIndex(action.player_index);
             setAuctionBids({});
-            log("✅", "AUCTION STARTED");
             break;
 
           case "placeBid":
-            log("💰", "PROCESSING PLACE BID");
             setAuctionBids((prev) => ({
               ...prev,
               [action.player_index]: action.action_data.bidAmount,
             }));
-            log("✅", `BID PLACED: ${action.action_data.bidAmount}`);
             break;
 
           case "endAuction":
-            log("🏁", "PROCESSING END AUCTION");
             const { winnerIndex, winningBid } = action.action_data;
             if (winnerIndex !== -1) {
               applyBuyCard({
@@ -942,24 +1190,55 @@ function App() {
             setAuctionBids({});
             setAuctionInitiatorIndex(null);
             setLandedCard(null);
-            log("✅", `AUCTION ENDED - Winner: ${winnerIndex}`);
             break;
 
-          default:
-            log("⚠️", `UNKNOWN ACTION TYPE: ${action.action_type}`);
+          case "playerLeft":
+            log("👋", `Player ${action.action_data.playerName} left the game`);
+
+            // Mark player as eliminated
+            setPlayers((prev) => {
+              const updated = [...prev];
+              updated[safeIndex] = {
+                ...updated[safeIndex],
+                isEliminated: true,
+              };
+              playersRef.current = updated;
+              return updated;
+            });
+
+            // Return their cards to the board
+            setCardOwners((prev) => {
+              const updated = { ...prev };
+              Object.entries(updated).forEach(([position, ownerIdx]) => {
+                if (ownerIdx === safeIndex) {
+                  delete updated[parseInt(position)];
+                }
+              });
+              return updated;
+            });
+
+            // Update turn if needed
+            const nextPlayerIdx = action.action_data.nextPlayerIndex;
+            if (nextPlayerIdx !== undefined) {
+              currentIndexRef.current = nextPlayerIdx;
+              setCurrentPlayerIndex(nextPlayerIdx);
+              setHasRolledThisTurn(false);
+              setLandedCard(null);
+              setPenaltyInfo(null);
+            }
+
+            // Check game over
+            setTimeout(() => checkGameOver(), 1000);
+            break;
         }
       } catch (error) {
         log("❌", "ACTION PROCESSING ERROR", error);
       }
-
-      log("🎮", "=== ACTION COMPLETE ===");
     }
 
     isProcessingRef.current = false;
-    log("✅", "QUEUE PROCESSING COMPLETE");
 
     if (actionQueueRef.current.length > 0) {
-      log("🔁", "QUEUE HAS MORE ITEMS - PROCESSING AGAIN");
       setTimeout(() => processActionQueue(), 100);
     }
   }, [
@@ -969,14 +1248,15 @@ function App() {
     getSafePlayerIndex,
     isMoving,
     log,
+    roomPlayers,
+    currentUserId,
   ]);
 
   useEffect(() => {
     if (!isMoving && actionQueueRef.current.length > 0) {
-      log("🔓", "MOVEMENT STOPPED - RESUMING QUEUE");
       processActionQueue();
     }
-  }, [isMoving, processActionQueue, log]);
+  }, [isMoving, processActionQueue]);
 
   const handleIncomingActionRef = useRef<(payload: any) => void>();
 
@@ -987,23 +1267,18 @@ function App() {
       log("📨", "RAW ACTION RECEIVED", {
         type: action.action_type,
         player: action.player_index,
-        sender: action.user_id,
-        currentUser: currentUserId,
       });
 
       if (action.user_id === currentUserId) {
-        log("⏭️", "SKIPPING OWN ACTION - SAME USER ID");
+        log("⏭️", "SKIPPING OWN ACTION");
         return;
       }
 
-      log("✅", "FOREIGN ACTION - WILL PROCESS");
       actionQueueRef.current.push(action);
       log("📦", `QUEUED - ${actionQueueRef.current.length} in queue`);
 
       if (!isMoving) {
         processActionQueue();
-      } else {
-        log("⏸️", "PLAYER MOVING - QUEUE WILL PROCESS AFTER MOVEMENT");
       }
     },
     [currentUserId, processActionQueue, isMoving, log]
@@ -1016,7 +1291,6 @@ function App() {
 
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe();
-      log("🧹", "OLD SUBSCRIPTION CLOSED");
     }
 
     const newChannel = RoomService.subscribeToActions(
@@ -1025,27 +1299,7 @@ function App() {
     );
     subscriptionRef.current = newChannel;
 
-    newChannel.on("system", {}, (status: any) => {
-      if (status.status === "CHANNEL_ERROR") {
-        log("❌", "CHANNEL ERROR - RECONNECTING IN 2s");
-        setTimeout(() => {
-          if (gameMode === "playing" && currentRoom) {
-            log("🔄", "RECONNECTING SUBSCRIPTION");
-            const reconnectChannel = RoomService.subscribeToActions(
-              currentRoom.id,
-              (payload) => handleIncomingActionRef.current?.(payload)
-            );
-            subscriptionRef.current = reconnectChannel;
-            log("✅", "RECONNECTED SUCCESSFULLY");
-          }
-        }, 2000);
-      }
-    });
-
-    log("✅", "NEW SUBSCRIPTION CREATED");
-
     return () => {
-      log("🧹", "SUBSCRIPTION CLEANUP");
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
         subscriptionRef.current = null;
@@ -1060,19 +1314,7 @@ function App() {
     const cardPrice = getCardPrice(landedCard.value);
     const player = playersRef.current[safeIndex];
 
-    if (!player || player.chips < cardPrice) {
-      log("❌", "CANNOT BUY - INSUFFICIENT CHIPS", {
-        chips: player?.chips,
-        price: cardPrice,
-      });
-      return;
-    }
-
-    log("💳", "BUY CARD INITIATED", {
-      position: finalPosition,
-      card: landedCard,
-      price: cardPrice,
-    });
+    if (!player || player.chips < cardPrice) return;
 
     applyBuyCard({
       position: finalPosition,
@@ -1097,7 +1339,12 @@ function App() {
     setLandedCard(null);
     setPenaltyInfo(null);
 
-    setTimeout(() => endTurn(), 500);
+    // Check for doubles before ending turn
+    setTimeout(() => {
+      if (!hasPair && !hasExtraTurn) {
+        endTurn();
+      }
+    }, 500);
   }, [
     landedCard,
     currentRoom,
@@ -1106,18 +1353,13 @@ function App() {
     getSafePlayerIndex,
     applyBuyCard,
     endTurn,
-    log,
+    hasPair,
+    hasExtraTurn,
   ]);
 
   const handlePayPenalty = useCallback(async () => {
     if (!penaltyInfo || !currentRoom || playersRef.current.length === 0) return;
     const safeIndex = getSafePlayerIndex(currentIndexRef.current, "payPenalty");
-
-    log("💸", "PAY PENALTY INITIATED", {
-      payer: safeIndex,
-      receiver: penaltyInfo.ownerIndex,
-      amount: penaltyInfo.penalty,
-    });
 
     applyPayPenalty({
       payerIndex: safeIndex,
@@ -1138,7 +1380,13 @@ function App() {
     );
 
     setPenaltyInfo(null);
-    setTimeout(() => endTurn(), 500);
+
+    // Check for doubles before ending turn
+    setTimeout(() => {
+      if (!hasPair && !hasExtraTurn) {
+        endTurn();
+      }
+    }, 500);
   }, [
     penaltyInfo,
     currentRoom,
@@ -1146,7 +1394,8 @@ function App() {
     getSafePlayerIndex,
     applyPayPenalty,
     endTurn,
-    log,
+    hasPair,
+    hasExtraTurn,
   ]);
 
   const handleStartAuction = useCallback(async () => {
@@ -1154,31 +1403,23 @@ function App() {
     const safeIndex = getSafePlayerIndex(currentIndexRef.current, "auction");
     const position = playerPositions[safeIndex];
 
-    log("🔨", "STARTING AUCTION", { card: landedCard, position });
-
     await RoomService.broadcastAction(
       currentRoom.id,
       currentUserId,
       safeIndex,
       "startAuction",
-      {
-        card: landedCard,
-        position,
-      }
+      { card: landedCard, position }
     );
 
     setAuctionInitiatorIndex(safeIndex);
     setAuctionBids({});
     setLandedCard(null);
-
-    log("✅", "AUCTION BROADCAST - WAITING FOR BIDS");
   }, [
     landedCard,
     currentRoom,
     currentUserId,
     playerPositions,
     getSafePlayerIndex,
-    log,
   ]);
 
   const handlePlaceBid = useCallback(
@@ -1187,8 +1428,6 @@ function App() {
       const myPlayerIndex = roomPlayers.findIndex(
         (p) => p.user_id === currentUserId
       );
-
-      log("💰", "PLACING BID", { amount: bidAmount, player: myPlayerIndex });
 
       setAuctionBids((prev) => ({ ...prev, [myPlayerIndex]: bidAmount }));
 
@@ -1200,7 +1439,7 @@ function App() {
         { bidAmount }
       );
     },
-    [auctionInfo, currentRoom, currentUserId, roomPlayers, log]
+    [auctionInfo, currentRoom, currentUserId, roomPlayers]
   );
 
   const handleCloseAuction = useCallback(async () => {
@@ -1216,8 +1455,6 @@ function App() {
       }
     });
 
-    log("🏁", "CLOSING AUCTION", { winner: winnerIndex, winningBid });
-
     const position = playerPositions[currentIndexRef.current];
     const card = dealtCards[position];
 
@@ -1226,12 +1463,7 @@ function App() {
       currentUserId,
       currentIndexRef.current,
       "endAuction",
-      {
-        winnerIndex,
-        winningBid,
-        card,
-        position,
-      }
+      { winnerIndex, winningBid, card, position }
     );
 
     if (winnerIndex !== -1) {
@@ -1245,7 +1477,13 @@ function App() {
 
     setAuctionBids({});
     setAuctionInitiatorIndex(null);
-    setTimeout(() => endTurn(), 500);
+
+    // Check for doubles before ending turn
+    setTimeout(() => {
+      if (!hasPair && !hasExtraTurn) {
+        endTurn();
+      }
+    }, 500);
   }, [
     auctionBids,
     currentRoom,
@@ -1254,37 +1492,21 @@ function App() {
     dealtCards,
     applyBuyCard,
     endTurn,
-    log,
+    hasPair,
+    hasExtraTurn,
   ]);
 
   useEffect(() => {
-    log("🔄", `PLAYERS STATE CHANGED: ${players.length}`);
     playersRef.current = players;
-  }, [players, log]);
+  }, [players]);
 
   useEffect(() => {
-    log("🔢", `CURRENT INDEX CHANGED: ${currentPlayerIndex}`);
     currentIndexRef.current = currentPlayerIndex;
-  }, [currentPlayerIndex, log]);
-
-  useEffect(() => {
-    const currentPlayer = playersRef.current[currentIndexRef.current];
-    const currentRoomPlayer = roomPlayers[currentIndexRef.current];
-    const isMyTurn = currentRoomPlayer?.user_id === currentUserId;
-
-    log("🎯", "TURN STATE", {
-      currentIndex: currentIndexRef.current,
-      playerName: currentPlayer?.name,
-      isMyTurn,
-      myUserId: currentUserId,
-      turnUserId: currentRoomPlayer?.user_id,
-    });
-  }, [currentPlayerIndex, roomPlayers, currentUserId, log]);
+  }, [currentPlayerIndex]);
 
   useEffect(() => {
     setHasRolledThisTurn(false);
-    log("🔄", "NEW TURN - RESET ROLLED FLAG");
-  }, [currentPlayerIndex, log]);
+  }, [currentPlayerIndex]);
 
   useEffect(() => {
     if (gameMode === "playing" && roomPlayers.length > 0 && currentUserId) {
@@ -1294,13 +1516,9 @@ function App() {
       if (myPlayerIndex !== -1) {
         const rotationOffsets = [0, 90, 180, 270];
         setBaseRotation(rotationOffsets[myPlayerIndex]);
-        log(
-          "🔄",
-          `BASE ROTATION SET: ${rotationOffsets[myPlayerIndex]}° for player ${myPlayerIndex}`
-        );
       }
     }
-  }, [gameMode, roomPlayers, currentUserId, log]);
+  }, [gameMode, roomPlayers, currentUserId]);
 
   const handleCreateRoom = useCallback(async () => {
     if (!currentUserId) {
@@ -1370,24 +1588,159 @@ function App() {
     }
   }, [currentRoom, currentUserId, roomPlayers]);
 
+  const getNextActivePlayer = (startIndex: number): number => {
+    const totalPlayers = playersRef.current.length;
+    let index = startIndex % totalPlayers;
+    let attempts = 0;
+
+    while (playersRef.current[index]?.isEliminated && attempts < totalPlayers) {
+      index = (index + 1) % totalPlayers;
+      attempts++;
+    }
+
+    return attempts < totalPlayers ? index : -1;
+  };
+
+  const handleLeaveGame = useCallback(async () => {
+    if (
+      !confirm("Are you sure? Your bought cards will be returned to the board.")
+    )
+      return;
+
+    try {
+      // Find the leaving player's index (not current turn player)
+      const myPlayerIndex = roomPlayers.findIndex(
+        (p) => p.user_id === currentUserId
+      );
+
+      if (myPlayerIndex === -1) {
+        alert("Cannot identify your player");
+        return;
+      }
+
+      const safeIndex = getSafePlayerIndex(myPlayerIndex, "leaveGame");
+      const playerToRemove = playersRef.current[safeIndex];
+      const roomPlayerRecord = roomPlayers[safeIndex];
+
+      if (!currentRoom || !roomPlayerRecord) {
+        alert("Cannot identify player record");
+        return;
+      }
+
+      log("👋", `PLAYER LEAVING: ${playerToRemove.name}`);
+
+      // 1. Mark player as eliminated and clear their cards
+      const { error: updateError } = await supabase
+        .from("poker_opoly_players")
+        .update({
+          eliminated: true,
+          left_at: new Date().toISOString(),
+          chips: 0,
+          bought_cards: [], // Clear their bought cards
+        })
+        .eq("id", roomPlayerRecord.id); // Use the actual player record ID
+
+      if (updateError) {
+        log("❌", "Failed to mark player eliminated", updateError);
+        return;
+      }
+
+      // 2. Broadcast leave action to all players
+      await RoomService.broadcastAction(
+        currentRoom.id,
+        currentUserId,
+        safeIndex,
+        "playerLeft",
+        {
+          boughtCards: playerToRemove.boughtCards || [],
+          playerName: playerToRemove.name,
+          nextPlayerIndex: getNextActivePlayer(safeIndex + 1),
+        }
+      );
+
+      // 3. Update UI: Mark player as eliminated
+      setPlayers((prev) => {
+        const updated = [...prev];
+        updated[safeIndex] = {
+          ...updated[safeIndex],
+          isEliminated: true,
+        };
+        playersRef.current = updated;
+        return updated;
+      });
+
+      // 4. Reset bought cards on board
+      setCardOwners((prev) => {
+        const updated = { ...prev };
+        Object.entries(updated).forEach(([position, ownerIdx]) => {
+          if (ownerIdx === safeIndex) {
+            delete updated[parseInt(position)];
+          }
+        });
+        return updated;
+      });
+
+      // 5. Advance turn to next active player
+      const nextPlayerIndex = getNextActivePlayer(safeIndex + 1);
+
+      await supabase
+        .from("game_rooms")
+        .update({
+          current_turn_player_index: nextPlayerIndex,
+        })
+        .eq("id", currentRoom.id);
+
+      currentIndexRef.current = nextPlayerIndex;
+      setCurrentPlayerIndex(nextPlayerIndex);
+      setHasRolledThisTurn(false);
+      setLandedCard(null);
+      setPenaltyInfo(null);
+
+      // 6. Check if game should end
+      const remainingPlayers = playersRef.current.filter(
+        (p) => !p.isEliminated && p.chips > 0
+      );
+
+      if (remainingPlayers.length <= 1) {
+        await supabase
+          .from("game_rooms")
+          .update({ status: "finished" })
+          .eq("id", currentRoom.id);
+
+        log("🏆", "GAME ENDED - ONLY 1 PLAYER REMAINING");
+      }
+
+      log("✅", "PLAYER LEFT SUCCESSFULLY");
+
+      // Redirect to homepage
+      navigate("/home");
+    } catch (error) {
+      log("❌", "ERROR LEAVING GAME", error);
+      alert("Failed to leave game. Please try again.");
+    }
+  }, [
+    currentRoom,
+    currentUserId,
+    roomPlayers,
+    getSafePlayerIndex,
+    log,
+    navigate,
+  ]);
+
   const handleStartGame = useCallback(async () => {
     if (!currentRoom || !isHost) return;
-    log("🎮", "HOST STARTING GAME...");
     const success = await RoomService.startGame(currentRoom.id, currentUserId);
     if (success) {
-      log("✅", "HOST: GAME STARTED");
       const freshRoom = await RoomService.getRoom(currentRoom.id);
       setGameMode("playing");
       await initializeFromGameState(freshRoom!);
     }
-  }, [currentRoom, currentUserId, isHost, initializeFromGameState, log]);
+  }, [currentRoom, currentUserId, isHost, initializeFromGameState]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (!currentRoom || !currentUserId) return;
 
     try {
-      log("👋 Leaving room:", currentRoom.room_code);
-
       if (waitingRoomSubsRef.current) {
         await waitingRoomSubsRef.current.room?.unsubscribe();
         await waitingRoomSubsRef.current.players?.unsubscribe();
@@ -1401,7 +1754,6 @@ function App() {
       setIsHost(false);
       setGameMode("select");
 
-      // Reset all game state
       actionQueueRef.current = [];
       isProcessingRef.current = false;
       currentIndexRef.current = 0;
@@ -1417,8 +1769,6 @@ function App() {
       setPenaltyInfo(null);
       setAuctionInfo(null);
       setShowSellModal(false);
-
-      log("✅ Successfully reset to lobby");
     } catch (error) {
       console.error("Error in handleLeaveRoom:", error);
       setCurrentRoom(null);
@@ -1426,37 +1776,32 @@ function App() {
       setIsHost(false);
       setGameMode("select");
     }
-  }, [currentRoom, currentUserId, log]);
+  }, [currentRoom, currentUserId]);
 
   const onRollComplete = useCallback(
     (dice1: number, dice2: number) => {
       const total = dice1 + dice2;
-      const hasPair = dice1 === dice2;
-      log("🎰", `DICE ROLL: ${dice1} + ${dice2} = ${total} PAIR: ${hasPair}`);
+      const hasPair = dice1 === dice2; // Correct: 1=1, 2=2, 3=3, etc
+
+      console.log(
+        `🎲 Rolled: ${dice1} + ${dice2} = ${total} | Doubles: ${hasPair}`
+      );
+
       handleDrawFromShoe(total, hasPair);
     },
     [handleDrawFromShoe, log]
   );
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
   const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
     const direction = invertScroll ? -1 : 1;
-    setRotation({
-      ...rotation,
-      z: rotation.z + (e.deltaY > 0 ? 10 * direction : -10 * direction),
-    });
+    const rotationAmount = e.deltaY > 0 ? 10 * direction : -10 * direction;
+
+    if (rotationMode === "board") {
+      setBoardRotation((prev) => prev + rotationAmount);
+    } else {
+      setProfileRotation((prev) => prev + rotationAmount);
+    }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -1468,10 +1813,14 @@ function App() {
     const currentTouch = e.touches[0].clientX;
     const diff = currentTouch - touchStart;
     const direction = invertScroll ? -1 : 1;
-    setRotation({
-      ...rotation,
-      z: rotation.z + diff * 0.5 * direction,
-    });
+    const rotationAmount = diff * 0.5 * direction;
+
+    if (rotationMode === "board") {
+      setBoardRotation((prev) => prev + rotationAmount);
+    } else {
+      setProfileRotation((prev) => prev + rotationAmount);
+    }
+
     setTouchStart(currentTouch);
   };
 
@@ -1485,6 +1834,7 @@ function App() {
     const cardHeight = 75;
     const cornerSize = 82.69;
     const gap = 2;
+
     let x = 0,
       y = 0,
       rotateZ = 0,
@@ -1494,8 +1844,12 @@ function App() {
       const i = index;
       if (i === 0) {
         x =
-          boardSize / 2 - 1 * (cardWidth + gap) - 70 - (cardWidth + gap) + 190;
-        y = boardSize / 2 + 10 + 10;
+          boardSize / 2 -
+          1 * (cardWidth + gap) -
+          70 -
+          (cardWidth + gap) +
+          cornerOffsets.bottomRight.x;
+        y = boardSize / 2 + 10 + cornerOffsets.bottomRight.y;
         isCorner = true;
       } else {
         x = boardSize / 2 - i * (cardWidth + gap) - 75 + 70;
@@ -1505,9 +1859,13 @@ function App() {
     } else if (index < spacesPerSide * 2) {
       const i = index - spacesPerSide;
       if (i === 0) {
-        x = -boardSize / 2 - 10 - 10;
+        x = -boardSize / 2 - 10 + cornerOffsets.bottomLeft.x;
         y =
-          boardSize / 2 - 1 * (cardWidth + gap) - 75 - (cardWidth + gap) + 195;
+          boardSize / 2 -
+          1 * (cardWidth + gap) -
+          75 -
+          (cardWidth + gap) +
+          cornerOffsets.bottomLeft.y;
         isCorner = true;
       } else {
         x = -boardSize / 2 - 10 - 10;
@@ -1518,8 +1876,12 @@ function App() {
       const i = index - spacesPerSide * 2;
       if (i === 0) {
         x =
-          -boardSize / 2 + 1 * (cardWidth + gap) + 75 + (cardWidth + gap) - 195;
-        y = -boardSize / 2 - 10 - 10;
+          -boardSize / 2 +
+          1 * (cardWidth + gap) +
+          75 +
+          (cardWidth + gap) +
+          cornerOffsets.topLeft.x;
+        y = -boardSize / 2 - 10 + cornerOffsets.topLeft.y;
         isCorner = true;
       } else {
         x = -boardSize / 2 + i * (cardWidth + gap) + 75 - 70;
@@ -1529,9 +1891,13 @@ function App() {
     } else {
       const i = index - spacesPerSide * 3;
       if (i === 0) {
-        x = boardSize / 2 + 10 + 10;
+        x = boardSize / 2 + 10 + cornerOffsets.topRight.x;
         y =
-          -boardSize / 2 + 1 * (cardWidth + gap) + 75 + (cardWidth + gap) - 195;
+          -boardSize / 2 +
+          1 * (cardWidth + gap) +
+          75 +
+          (cardWidth + gap) +
+          cornerOffsets.topRight.y;
         isCorner = true;
       } else {
         x = boardSize / 2 + 10 + 10;
@@ -1551,7 +1917,9 @@ function App() {
   };
 
   const handleDeal = () => {
-    console.log("handleDeal: Starting card deal");
+    const dealSound = new Audio("games/pokeropoly/sound/deal-cards.mp3");
+    dealSound.volume = 0.7; // Adjust volume as needed (0.5-0.9 range works well with other sounds)
+    dealSound.play().catch((e) => console.log("Deal sound failed", e));
     const suits = ["♠", "♥", "♦", "♣"];
     const values = [
       "A",
@@ -1576,82 +1944,61 @@ function App() {
       });
     });
 
-    console.log("handleDeal: Created full deck", { deckSize: fullDeck.length });
-
     for (let i = fullDeck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [fullDeck[i], fullDeck[j]] = [fullDeck[j], fullDeck[i]];
     }
-    console.log("handleDeal: Shuffled deck");
 
     const newDealtCards: { [key: number]: { suit: string; value: string } } =
       {};
     let deckIndex = 0;
 
     for (let i = 0; i < totalSpaces; i++) {
-      if (i === 0 || i === 16 || i === 32 || i === 48) {
-        console.log("handleDeal: Skipping corner position", { position: i });
-        continue;
-      }
-
-      if (QUESTION_MARK_POSITIONS.includes(i)) {
-        console.log("handleDeal: Skipping mystery card position", {
-          position: i,
-        });
-        continue;
-      }
+      if (i === 0 || i === 16 || i === 32 || i === 48) continue;
+      if (QUESTION_MARK_POSITIONS.includes(i)) continue;
 
       newDealtCards[i] = fullDeck[deckIndex];
-      console.log("handleDeal: Assigned card to position", {
-        position: i,
-        card: newDealtCards[i],
-      });
       deckIndex++;
     }
 
     setDealtCards(newDealtCards);
-    console.log("handleDeal: Set dealtCards", { dealtCards: newDealtCards });
 
-    // Assign random mystery cards to question mark positions
     const newMysteryCards: { [key: number]: MysteryCard } = {};
-    QUESTION_MARK_POSITIONS.forEach((pos) => {
-      newMysteryCards[pos] = getRandomMysteryCard();
-      console.log("handleDeal: Assigned mystery card to position", {
-        position: pos,
-        mysteryCard: newMysteryCards[pos],
-      });
-    });
-    setMysteryCardPositions(newMysteryCards);
-    console.log("handleDeal: Set mysteryCardPositions", { newMysteryCards });
-
-    // Select 2 random ? positions for joker hats (visual indicator)
     const newJokerPositions = initializeJokerPositions();
     setJokerPositions(newJokerPositions);
-    console.log(
-      "🃏 handleDeal: Joker positions initialized:",
-      newJokerPositions
+
+    const nonJokerPositions = QUESTION_MARK_POSITIONS.filter(
+      (pos) => !newJokerPositions.includes(pos)
     );
 
-    // Trigger card falling animations
+    const shuffledMysteryCards = [...MYSTERY_CARDS].sort(
+      () => Math.random() - 0.5
+    );
+    const shuffledBombCards = [...BOMB_CARDS].sort(() => Math.random() - 0.5);
+
+    for (let i = 0; i < 6; i++) {
+      const pos = nonJokerPositions[i];
+      if (i < 3) {
+        newMysteryCards[pos] = shuffledMysteryCards[i];
+      } else {
+        newMysteryCards[pos] = shuffledBombCards[i - 3];
+      }
+    }
+
+    setMysteryCardPositions(newMysteryCards);
+
     const allCardIndices = Object.keys(newDealtCards).map(Number);
     setCardsAnimating(new Set(allCardIndices));
     setAnimationTrigger((prev) => prev + 1);
-    console.log("handleDeal: Triggered card animations", { allCardIndices });
 
-    // Clear animation state after all cards have fallen
     setTimeout(() => {
       setCardsAnimating(new Set());
-      console.log("handleDeal: Cleared card animations");
     }, 2500);
 
     if (!gameStarted) {
       const randomPlayer = Math.floor(Math.random() * 4);
       setCurrentPlayerIndex(randomPlayer);
       setGameStarted(true);
-      console.log("handleDeal: Started game, set first player", {
-        randomPlayer,
-        gameStarted: true,
-      });
     }
   };
 
@@ -1662,13 +2009,15 @@ function App() {
         index === 0 ? 0 : index === 16 ? 1 : index === 32 ? 2 : 3;
       return { isCorner: true, value: "", suit: cornerSuits[suitIndex] };
     }
-    const questionMarkPositions = [5, 11, 21, 27, 37, 43, 53, 59];
-    if (questionMarkPositions.includes(index)) {
+
+    if (QUESTION_MARK_POSITIONS.includes(index)) {
       return { isCorner: false, value: "?", suit: "", isQuestion: true };
     }
+
     if (dealtCards[index]) {
       return { ...dealtCards[index], isCorner: false, isQuestion: false };
     }
+
     return { suit: "", value: "", isCorner: false, isQuestion: false };
   };
 
@@ -1712,7 +2061,6 @@ function App() {
     const roomChannel = RoomService.subscribeToRoom(
       roomId,
       async (updatedRoom) => {
-        log("🔄 ROOM UPDATE:", updatedRoom.status);
         setCurrentRoom(updatedRoom);
 
         if (updatedRoom.status === "playing" && !isHost) {
@@ -1725,8 +2073,6 @@ function App() {
     const playersChannel = RoomService.subscribeToRoomPlayers(
       roomId,
       (updatedPlayers) => {
-        log("🔄 PLAYERS UPDATED:", updatedPlayers.length);
-
         const stillInRoom = updatedPlayers.some(
           (p) => p.user_id === currentUserId
         );
@@ -1756,41 +2102,7 @@ function App() {
     isHost,
     currentUserId,
     initializeFromGameState,
-    log,
   ]);
-
-  useEffect(() => {
-    if (isAutoPlaying && landedCard && players.length > 0) {
-      const timer = setTimeout(() => {
-        const safeIndex = getSafePlayerIndex(currentPlayerIndex, "autoplay");
-        const player = playersRef.current[safeIndex];
-        const cardPrice = getCardPrice(landedCard.value);
-        if (player && player.chips >= cardPrice) {
-          handleBuyCard();
-        } else {
-          setLandedCard(null);
-          endTurn();
-        }
-      }, autoPlaySpeed);
-      return () => clearTimeout(timer);
-    }
-  }, [
-    isAutoPlaying,
-    landedCard,
-    currentPlayerIndex,
-    autoPlaySpeed,
-    handleBuyCard,
-    endTurn,
-    getSafePlayerIndex,
-    players.length,
-  ]);
-
-  useEffect(() => {
-    if (isAutoPlaying && penaltyInfo) {
-      const timer = setTimeout(() => handlePayPenalty(), autoPlaySpeed + 500);
-      return () => clearTimeout(timer);
-    }
-  }, [isAutoPlaying, penaltyInfo, autoPlaySpeed, handlePayPenalty]);
 
   if (gameMode === "select") {
     return (
@@ -1824,74 +2136,150 @@ function App() {
   // 🏆 WINNER SCREEN
   if (gameOver && winner) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900">
-        <div className="bg-black/60 backdrop-blur-xl rounded-3xl p-12 border-4 border-yellow-400 shadow-2xl max-w-2xl w-full mx-4">
-          <div className="text-center space-y-6">
-            <div className="text-8xl mb-4 animate-bounce">🏆</div>
-            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-500 mb-4">
-              WINNER!
-            </h1>
-            <div className="text-4xl font-bold text-white mb-8">
-              {winner.name} {winner.suit}
-            </div>
-            <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-2xl p-6 border-2 border-green-400/50">
-              <div className="text-yellow-400 text-5xl font-black mb-2">
-                ${winner.chips.toLocaleString()}
-              </div>
-              <div className="text-white/80 text-lg font-semibold">
-                Final Chips
-              </div>
-            </div>
-            <div className="mt-8 space-y-4">
-              <h3 className="text-2xl font-bold text-white/90 mb-4">
-                Final Standings
-              </h3>
-              {players
-                .sort((a, b) => b.chips - a.chips)
-                .map((player, idx) => (
+      <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 relative overflow-hidden p-4">
+        {/* Animated background effects */}
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-20 left-20 w-72 h-72 bg-yellow-400 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        </div>
+
+        <div className="relative z-10 max-w-3xl w-full max-h-[95vh] overflow-y-auto">
+          {/* Main Winner Card */}
+          <div className="bg-gradient-to-br from-black/80 to-black/60 backdrop-blur-2xl rounded-2xl border-4 border-yellow-400 shadow-2xl overflow-hidden">
+            {/* Trophy Header */}
+            <div className="bg-gradient-to-r from-yellow-500/20 via-yellow-400/20 to-yellow-500/20 border-b-2 border-yellow-400/50 py-4">
+              <div className="text-center">
+                <div className="text-6xl mb-2 animate-bounce inline-block">
+                  🏆
+                </div>
+                <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-200 mb-2 animate-pulse">
+                  VICTORY!
+                </h1>
+                <div className="flex items-center justify-center gap-3 mt-2">
                   <div
-                    key={idx}
-                    className={`flex items-center justify-between p-4 rounded-xl border-2 $${
-                      player.isEliminated
-                        ? "bg-red-900/20 border-red-500/30"
-                        : "bg-white/10 border-white/20"
-                    }`}
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-2xl font-black border-4 shadow-xl"
+                    style={{
+                      backgroundColor: winner.color,
+                      borderColor: "#fbbf24",
+                    }}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl font-bold text-white/60">
-                        #{idx + 1}
-                      </div>
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold border-2"
-                        style={{
-                          backgroundColor: player.color + "40",
-                          borderColor: player.color,
-                          color: player.color,
-                        }}
-                      >
-                        {player.suit}
-                      </div>
-                      <div className="text-white font-bold text-lg">
-                        {player.name}
-                      </div>
-                      {player.isEliminated && (
-                        <span className="text-red-400 text-sm font-semibold">
-                          💀 ELIMINATED
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-yellow-400 font-bold text-xl">
-                      ${player.chips.toLocaleString()}
-                    </div>
+                    {winner.suit}
                   </div>
-                ))}
+                  <div className="text-3xl font-black text-white">
+                    {winner.name}
+                  </div>
+                </div>
+              </div>
             </div>
-            <button
-              onClick={handleLeaveRoom}
-              className="mt-8 bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:from-blue-600 hover:via-blue-700 hover:to-blue-800 text-white font-black py-4 px-8 rounded-2xl shadow-xl transform hover:scale-105 active:scale-95 transition-all text-lg border-2 border-blue-400/50"
-            >
-              🏠 Back to Lobby
-            </button>
+
+            {/* Prize Section */}
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {/* Total Pool */}
+                <div className="bg-gradient-to-br from-yellow-500/30 to-orange-500/30 rounded-xl p-3 border-2 border-yellow-400/60 shadow-xl">
+                  <div className="text-yellow-300 text-xs font-bold mb-1 uppercase tracking-wider">
+                    💰 Prize Pool
+                  </div>
+                  <div className="text-yellow-100 text-2xl font-black mb-0.5">
+                    ${(15000 * players.length).toLocaleString()}
+                  </div>
+                  <div className="text-yellow-200/70 text-xs font-semibold">
+                    {players.length} players × $15,000
+                  </div>
+                </div>
+
+                {/* Final Score */}
+                <div className="bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-xl p-3 border-2 border-green-400/60 shadow-xl">
+                  <div className="text-green-300 text-xs font-bold mb-1 uppercase tracking-wider">
+                    🎯 Final Score
+                  </div>
+                  <div className="text-green-100 text-2xl font-black mb-0.5">
+                    ${winner.chips.toLocaleString()}
+                  </div>
+                  <div className="text-green-200/70 text-xs font-semibold">
+                    Chips remaining in game
+                  </div>
+                </div>
+              </div>
+
+              {/* Final Standings */}
+              <div className="mb-4">
+                <h3 className="text-xl font-black text-white mb-2 flex items-center gap-2">
+                  <span>📊</span> Final Standings
+                </h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                  {players
+                    .sort((a, b) => b.chips - a.chips)
+                    .map((player, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-2 rounded-lg border-2 transition-all ${
+                          idx === 0
+                            ? "bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 border-yellow-400/70 shadow-lg"
+                            : player.isEliminated
+                              ? "bg-red-900/20 border-red-500/30"
+                              : "bg-white/5 border-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`text-lg font-black ${
+                              idx === 0
+                                ? "text-yellow-400"
+                                : idx === 1
+                                  ? "text-gray-300"
+                                  : idx === 2
+                                    ? "text-orange-400"
+                                    : "text-white/40"
+                            }`}
+                          >
+                            {idx === 0
+                              ? "🥇"
+                              : idx === 1
+                                ? "🥈"
+                                : idx === 2
+                                  ? "🥉"
+                                  : `#${idx + 1}`}
+                          </div>
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2"
+                            style={{
+                              backgroundColor: player.color + "40",
+                              borderColor: player.color,
+                              color: player.color,
+                            }}
+                          >
+                            {player.suit}
+                          </div>
+                          <div
+                            className={`font-bold text-sm ${idx === 0 ? "text-yellow-200" : "text-white"} truncate max-w-[150px]`}
+                          >
+                            {player.name}
+                          </div>
+                          {player.isEliminated && (
+                            <span className="text-red-400 text-xs font-semibold px-1.5 py-0.5 bg-red-500/20 rounded">
+                              OUT
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`font-black text-sm ${idx === 0 ? "text-yellow-300" : "text-yellow-400/70"}`}
+                        >
+                          ${player.chips.toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <button
+                onClick={handleLeaveRoom}
+                className="w-full bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:from-blue-600 hover:via-blue-700 hover:to-blue-800 text-white font-black py-3 px-6 rounded-lg shadow-2xl transform hover:scale-105 active:scale-95 transition-all text-base border-2 border-blue-400/50"
+              >
+                🏠 Back to Lobby
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1920,6 +2308,7 @@ function App() {
       </div>
     );
   }
+
   if (gameMode !== "playing" || players.length === 0) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
@@ -1951,121 +2340,63 @@ function App() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* 🎨 ENHANCED DEBUG OVERLAY
-      <div className="fixed top-4 left-4 z-[9999] bg-gradient-to-br from-gray-900/95 to-black/95 backdrop-blur-xl text-white p-5 rounded-2xl border border-white/10 shadow-2xl font-mono text-xs space-y-2 min-w-[280px]">
-        <div className="text-yellow-400 font-bold text-sm mb-3 border-b border-white/10 pb-2">
-          🎮 Game Debug
-        </div>
+      {/* CONTROLS */}
+      <div className="fixed top-4 right-4 z-10 flex flex-col gap-2">
+        <button
+          onClick={() => setInvertScroll(!invertScroll)}
+          className="bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-bold py-2 px-4 rounded-lg shadow-xl transition-all hover:scale-105 text-sm border-2 border-slate-500"
+        >
+          {invertScroll ? "🔄 Scroll: Inverted" : "🔄 Scroll: Normal"}
+        </button>
 
-        <div className="flex justify-between">
-          <span className="text-white/60">Current Turn:</span>
-          <span className="font-bold text-cyan-400">{currentPlayerIndex}</span>
-        </div>
+        <button
+          onClick={() => {
+            const newMode = rotationMode === "board" ? "profiles" : "board";
+            setRotationMode(newMode);
+          }}
+          className={`${
+            rotationMode === "board"
+              ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+              : "bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+          } text-white font-bold py-2 px-4 rounded-lg shadow-xl transition-all hover:scale-105 text-sm border-2 ${
+            rotationMode === "board" ? "border-blue-500" : "border-green-500"
+          }`}
+        >
+          {rotationMode === "board"
+            ? "🎲 Rotate: Board"
+            : "👥 Rotate: Profiles"}
+        </button>
 
-        <div className="flex justify-between">
-          <span className="text-white/60">Player Name:</span>
-          <span className="font-bold text-green-400 truncate max-w-[120px]">
-            {players[currentPlayerIndex]?.name}
-          </span>
-        </div>
+        {gameStarted && (
+          <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border-2 border-slate-500">
+            <div className="text-white text-xs font-semibold mb-2">Audio</div>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-white text-xs w-12">🎵</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={musicVolume * 100}
+                  onChange={(e) => {
+                    const volume = parseFloat(e.target.value) / 100;
+                    setMusicVolume(volume);
+                    if (audioRef.current) {
+                      audioRef.current.volume = volume;
+                    }
+                  }}
+                  className="w-24"
+                />
+                <span className="text-white text-xs">
+                  {Math.round(musicVolume * 100)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
-        <div className="flex justify-between">
-          <span className="text-white/60">My User ID:</span>
-          <span className="font-bold text-purple-400">
-            {currentUserId.substring(0, 8)}...
-          </span>
-        </div>
-
-        <div className="flex justify-between">
-          <span className="text-white/60">Turn User ID:</span>
-          <span className="font-bold text-purple-400">
-            {roomPlayers[currentPlayerIndex]?.user_id.substring(0, 8)}...
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-white/60">Is My Turn:</span>
-          <span
-            className={`font-bold px-2 py-1 rounded text-[10px] ${
-              roomPlayers[currentPlayerIndex]?.user_id === currentUserId
-                ? "bg-green-500/20 text-green-400"
-                : "bg-red-500/20 text-red-400"
-            }`}
-          >
-            {roomPlayers[currentPlayerIndex]?.user_id === currentUserId
-              ? "✅ YES"
-              : "❌ NO"}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-white/60">Is Moving:</span>
-          <span
-            className={`font-bold px-2 py-1 rounded text-[10px] ${
-              isMoving
-                ? "bg-blue-500/20 text-blue-400"
-                : "bg-gray-500/20 text-gray-400"
-            }`}
-          >
-            {isMoving ? "🏃 MOVING" : "⏸️ STOPPED"}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-white/60">Is Rolling:</span>
-          <span
-            className={`font-bold px-2 py-1 rounded text-[10px] ${
-              isRolling
-                ? "bg-yellow-500/20 text-yellow-400"
-                : "bg-gray-500/20 text-gray-400"
-            }`}
-          >
-            {isRolling ? "🎲 ROLLING" : "⏹️ IDLE"}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-white/60">Rolled This Turn:</span>
-          <span
-            className={`font-bold px-2 py-1 rounded text-[10px] ${
-              hasRolledThisTurn
-                ? "bg-green-500/20 text-green-400"
-                : "bg-gray-500/20 text-gray-400"
-            }`}
-          >
-            {hasRolledThisTurn ? "✅ YES" : "❌ NO"}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-white/60">Connection:</span>
-          <span
-            className={`font-bold px-2 py-1 rounded text-[10px] ${
-              subscriptionRef.current
-                ? "bg-green-500/20 text-green-400 animate-pulse"
-                : "bg-red-500/20 text-red-400"
-            }`}
-          >
-            {subscriptionRef.current ? "🟢 CONNECTED" : "🔴 DISCONNECTED"}
-          </span>
-        </div>
-      </div> */}
-
-      {!gameStarted && (
-        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-10">
-          <button
-            onClick={() => {
-              console.log("Button: Dealing cards");
-              handleDeal();
-            }}
-            className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 px-8 rounded-lg shadow-2xl transition-all hover:scale-105 text-lg border-2 border-emerald-400"
-          >
-            Deal Cards
-          </button>
-        </div>
-      )}
-
-      {/* 🎨 ENHANCED AUCTION BIDS PANEL */}
+      {/* AUCTION BIDS PANEL */}
       {auctionInitiatorIndex ===
         roomPlayers.findIndex((p) => p.user_id === currentUserId) &&
         Object.keys(auctionBids).length > 0 && (
@@ -2117,81 +2448,26 @@ function App() {
           </div>
         )}
 
-      {/* 🎨 ENHANCED END TURN BUTTON */}
-      {!landedCard &&
-        !penaltyInfo &&
-        !isMoving &&
-        !isRolling &&
-        hasRolledThisTurn &&
-        roomPlayers[currentPlayerIndex]?.user_id === currentUserId && (
-          <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50">
+      {gameStarted &&
+        gameMode === "playing" &&
+        !gameOver &&
+        roomPlayers.some((p) => p.user_id === currentUserId) && (
+          <div className="fixed bottom-8 right-8 z-50">
             <button
-              onClick={endTurn}
-              className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white font-black py-4 px-10 rounded-full shadow-2xl transform hover:scale-110 active:scale-95 transition-all text-xl border-4 border-white/30 backdrop-blur-sm animate-pulse"
+              onClick={handleLeaveGame}
+              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black py-3 px-6 rounded-lg shadow-2xl transform hover:scale-105 active:scale-95 transition-all text-sm border-2 border-red-400/50 backdrop-blur-sm"
             >
-              <span className="drop-shadow-lg">✅ End Turn</span>
+              🚪 Leave Game
             </button>
           </div>
         )}
-
-      {/* 🎨 ENHANCED CONTROLS */}
-      <div className="fixed top-4 right-4 z-10 flex flex-col gap-3">
-        <button
-          onClick={() => setInvertScroll(!invertScroll)}
-          className="bg-gradient-to-r from-slate-700 via-slate-800 to-gray-900 hover:from-slate-600 hover:via-slate-700 hover:to-gray-800 text-white font-bold py-3 px-5 rounded-xl shadow-xl transition-all hover:scale-105 text-sm border-2 border-slate-500/50 backdrop-blur-sm"
-        >
-          {invertScroll ? "🔄 Scroll: Inverted" : "🔄 Scroll: Normal"}
-        </button>
-
-        {/* {gameStarted && (
-          <div className="bg-gradient-to-br from-black/80 via-gray-900/80 to-black/80 backdrop-blur-xl rounded-xl p-4 border-2 border-slate-500/50 shadow-2xl">
-            <div className="text-white text-sm font-bold mb-3 text-center">
-              ⚡ Auto Play
-            </div>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-                className={`${
-                  isAutoPlaying
-                    ? "bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 border-red-400/50"
-                    : "bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 border-green-400/50"
-                } text-white font-bold py-3 px-5 rounded-xl shadow-xl transition-all hover:scale-105 text-sm border-2`}
-              >
-                {isAutoPlaying ? "⏹️ Stop" : "▶️ Start"}
-              </button>
-              <div className="text-white text-xs mb-1 text-center font-semibold">
-                Speed
-              </div>
-              <div className="flex gap-2">
-                {[
-                  { speed: 2000, label: "0.5x" },
-                  { speed: 1000, label: "1x" },
-                  { speed: 500, label: "2x" },
-                ].map(({ speed, label }) => (
-                  <button
-                    key={speed}
-                    onClick={() => setAutoPlaySpeed(speed)}
-                    className={`${
-                      autoPlaySpeed === speed
-                        ? "bg-gradient-to-r from-blue-500 to-blue-600 border-blue-400"
-                        : "bg-gradient-to-r from-slate-600 to-slate-700 border-slate-500"
-                    } hover:scale-110 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all border-2 flex-1`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )} */}
-      </div>
 
       {/* BOARD */}
       <div className="perspective-1000 w-full h-full flex items-center justify-center">
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + boardRotation}deg)`,
             width: "850px",
             height: "850px",
           }}
@@ -2223,9 +2499,7 @@ function App() {
             <div
               className="absolute inset-0"
               style={{
-                background: `
-                  radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)
-                `,
+                background: `radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)`,
               }}
             />
             <div
@@ -2253,7 +2527,7 @@ function App() {
               }}
             />
             <div
-              className="absolute inset-20 rounded-lg backdrop-blur-sm border-2 pointer-events-none"
+              className="absolute inset-0 rounded-lg backdrop-blur-sm border-2 pointer-events-none"
               style={{
                 background:
                   "linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 50%, rgba(15, 23, 42, 0.6) 100%)",
@@ -2266,27 +2540,16 @@ function App() {
               }}
             >
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div
-                  className="text-center"
-                  style={{
-                    textShadow: `
-                      0 0 20px rgba(99, 102, 241, 0.5),
-                      0 0 40px rgba(168, 85, 247, 0.3),
-                      0 4px 8px rgba(0, 0, 0, 0.8)
-                    `,
-                  }}
-                >
-                  <h1 className="text-8xl font-bold text-white mb-2 tracking-wider">
-                    POKER
-                  </h1>
-                  <h2 className="text-6xl font-bold text-yellow-400 tracking-wide">
-                    OPOLY
-                  </h2>
-                  <div className="mt-6 text-2xl text-white/80">♠ ♥ ♦ ♣</div>
-                </div>
+                <img
+                  src="/games/pokeropoly/images/pokeropoly.png"
+                  alt="Pokeropoly"
+                  className="w-full h-full object-cover drop-shadow-[0_0_25px_rgba(168,85,247,0.4)]"
+                />
               </div>
             </div>
           </div>
+
+          {/* BOARD SPACES */}
           {Array.from({ length: totalSpaces }).map((_, index) => {
             const pos = getPropertyPosition(index);
             const card = getCard(index);
@@ -2302,7 +2565,7 @@ function App() {
             return (
               <div
                 key={index}
-                className="absolute rounded-lg transition-all hover:scale-110 cursor-pointer group"
+                className="absolute rounded-md transition-all hover:scale-110 cursor-pointer group"
                 style={{
                   width: `${pos.width}px`,
                   height: `${pos.height}px`,
@@ -2315,7 +2578,7 @@ function App() {
               >
                 {card.isCorner ? (
                   <div
-                    className="w-full h-full flex items-center justify-center font-bold rounded-lg relative overflow-hidden border-4 shadow-2xl"
+                    className="w-full h-full flex items-center justify-center font-bold rounded-md relative overflow-hidden border-4"
                     style={{
                       backgroundColor: getSuitColor(card.suit),
                       borderColor:
@@ -2329,7 +2592,7 @@ function App() {
                     }}
                   >
                     <div className="text-center relative z-10">
-                      <div className="text-6xl text-white drop-shadow-2xl">
+                      <div className="text-6xl text-white drop-shadow-lg">
                         {card.suit}
                       </div>
                     </div>
@@ -2340,6 +2603,7 @@ function App() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%) translateZ(20px)",
+                          zIndex: 100,
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -2352,47 +2616,13 @@ function App() {
                       </div>
                     )}
                   </div>
-                ) : getJokerPositions().includes(index) ? (
-                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-yellow-600 overflow-hidden">
+                ) : jokerPositions.includes(index) ? (
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-2 border-yellow-600 rounded-md">
                     <img
                       src="/games/pokeropoly/images/wildcard.png"
                       alt="Wild Card"
-                      className="w-full h-full object-cover"
-                      onError={(e) =>
-                        console.error(
-                          "❌ Wild card image failed to load at position:",
-                          index
-                        )
-                      }
-                      onLoad={() =>
-                        console.log(
-                          "✅ Wild card image loaded at position:",
-                          index
-                        )
-                      }
+                      className="w-full h-full object-contain p-0.5"
                     />
-                  </div>
-                ) : card.isQuestion ? (
-                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-white to-gray-100 border-4 border-purple-500 overflow-visible shadow-xl rounded-lg">
-                    {jokerPositions.includes(index) ? (
-                      <img
-                        src="/games/pokeropoly/images/joker hat.png"
-                        alt="Joker"
-                        className="absolute object-contain"
-                        style={{
-                          width: "150%",
-                          height: "150%",
-                          top: "-30%",
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          zIndex: 100,
-                        }}
-                      />
-                    ) : (
-                      <div className="text-5xl font-black text-purple-600 drop-shadow-lg">
-                        ?
-                      </div>
-                    )}
                     {playersOnThisSpace.length > 0 && (
                       <div
                         className="absolute flex gap-0.5"
@@ -2400,6 +2630,79 @@ function App() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%)",
+                          zIndex: 100,
+                        }}
+                      >
+                        {playersOnThisSpace.map((pIndex) => (
+                          <PlayerIcon
+                            key={pIndex}
+                            color={players[pIndex]?.color || "#000"}
+                            suit={players[pIndex]?.suit || "♠"}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : card.isQuestion ? (
+                  <div className="w-full h-full flex items-center justify-center relative bg-gradient-to-br from-yellow-400 to-orange-500 border-2 border-yellow-600 rounded-md">
+                    {(() => {
+                      const isJoker = jokerPositions.includes(index);
+                      const mysteryCard = mysteryCardPositions[index];
+
+                      if (isJoker) {
+                        return (
+                          <img
+                            src="/games/pokeropoly/images/wildcard.png"
+                            alt="Wild Card"
+                            className="w-full h-full object-cover p-1"
+                          />
+                        );
+                      } else if (mysteryCard) {
+                        const imagePath =
+                          mysteryCard.deck === "Bomb"
+                            ? "/games/pokeropoly/images/bomb.png"
+                            : "/games/pokeropoly/images/lightining.png";
+
+                        return (
+                          <img
+                            src={imagePath}
+                            alt={
+                              mysteryCard.deck === "Bomb"
+                                ? "Bomb Card"
+                                : "Mystery Card"
+                            }
+                            className="w-[100%] h-[100%] object-contain"
+                            onError={(e) =>
+                              console.error(
+                                `❌ ${mysteryCard.deck} image failed to load:`,
+                                e
+                              )
+                            }
+                            onLoad={() =>
+                              console.log(
+                                `✅ ${mysteryCard.deck} image loaded at position:`,
+                                index
+                              )
+                            }
+                          />
+                        );
+                      } else {
+                        return (
+                          <div className="text-5xl font-bold text-purple-500 bg-white w-full h-full flex items-center justify-center">
+                            ?
+                          </div>
+                        );
+                      }
+                    })()}
+
+                    {playersOnThisSpace.length > 0 && (
+                      <div
+                        className="absolute flex gap-0.5"
+                        style={{
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          zIndex: 100,
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -2414,24 +2717,28 @@ function App() {
                   </div>
                 ) : dealtCards[index] ? (
                   <div
-                    className="w-full h-full flex flex-col items-center justify-center relative border-2 shadow-xl rounded-lg"
+                    className="w-full h-full flex flex-col items-center justify-center relative border-2 shadow-sm"
                     style={{
                       backgroundColor: isOwned ? ownerColor : "white",
                       borderColor: isOwned ? ownerColor : suitColor,
+                      animation: cardsAnimating.has(index)
+                        ? `cardFall 0.6s ease-out ${(index % 64) * 0.03}s both`
+                        : "none",
                     }}
                   >
                     <div
-                      className="text-sm font-bold leading-none"
+                      className="text-xl font-bold leading-none"
                       style={{ color: isOwned ? "white" : suitColor }}
                     >
                       {card.value}
                     </div>
                     <div
-                      className="text-xl leading-none mt-0.5"
+                      className="text-4xl leading-none mt-1"
                       style={{ color: isOwned ? "white" : suitColor }}
                     >
                       {card.suit}
                     </div>
+
                     {playersOnThisSpace.length > 0 && (
                       <div
                         className="absolute flex gap-0.5"
@@ -2439,6 +2746,7 @@ function App() {
                           top: "50%",
                           left: "50%",
                           transform: "translate(-50%, -50%)",
+                          zIndex: 100,
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
@@ -2458,38 +2766,28 @@ function App() {
         </div>
       </div>
 
-      {/* 🎨 ENHANCED PLAYER PROFILES */}
+      {/* PLAYER PROFILES */}
       <div className="perspective-1000 w-full h-full flex items-center justify-center absolute inset-0 pointer-events-none">
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
           style={{
-            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z + profileRotation}deg)`,
             width: "850px",
             height: "850px",
           }}
         >
           {players.map((player, index) => {
-            if (!player || !player.color) return null;
-            const numPlayers = players.length;
-            const angleStep = 360 / numPlayers;
-            const angle =
-              (index * angleStep - 90 + baseRotation) * (Math.PI / 180); // -90 to start from bottom
-            const radius = 250; // Distance from center (adjust as needed)
-            const depthOffset = index * 10; // Increase depth for each player to prevent overlap
-
-            // Calculate x, y positions in a circular layout
-            const posX = radius * Math.cos(angle);
-            const posY = radius * Math.sin(angle);
+            log("📋", "Rendering player profile", {
+              playerIndex: index,
+              playerName: player.name,
+            });
             const profilePositions = {
               bottom: { x: 0, y: 230, rotateZ: 0 },
-              left: { x: -320, y: 0, rotateZ: 90 },
-              top: { x: 0, y: -320, rotateZ: 180 },
-              right: { x: 320, y: 0, rotateZ: 270 },
+              left: { x: -230, y: 0, rotateZ: 90 },
+              top: { x: 0, y: -230, rotateZ: 180 },
+              right: { x: 230, y: 0, rotateZ: 270 },
             };
             const pos = profilePositions[player.position];
-            const playerRotationX =
-              index === 0 ? 0 : index === 1 ? 60 : index === 2 ? 0 : 60;
-
             return (
               <div
                 key={index}
@@ -2497,12 +2795,11 @@ function App() {
                 style={{
                   left: "50%",
                   top: "50%",
-                  scale: "0.8",
-                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-30deg) translateZ(53px`, // Dynamic depth offset
+                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-40deg) translateZ(43px) scale(0.8)`,
                 }}
               >
                 <div
-                  className="rounded-xl border-2 shadow-2xl pt-6 p-4 w-240px relative"
+                  className="rounded-xl border-2 shadow-2xl p-4 min-w-[280px] relative"
                   style={{
                     backgroundColor: player.color,
                     borderColor: `${player.color}`,
@@ -2512,7 +2809,7 @@ function App() {
                         : undefined,
                   }}
                 >
-                  {index === currentPlayerIndex && (
+                  {currentPlayerIndex === index && (
                     <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
                       CURRENT TURN
                     </div>
@@ -2530,194 +2827,251 @@ function App() {
                         <span
                           className="text-2xl"
                           style={{
-                            color: player.suit
-                              ? "white"
-                              : getSuitColor(player.suit),
+                            color:
+                              player.suit === "♠"
+                                ? "white"
+                                : getSuitColor(player.suit),
                           }}
                         >
                           {player.suit}
                         </span>
                       </div>
-                      <div className="bg-black/30 backdrop-blur-sm px-3 py-1 rounded-lg">
+                      <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-lg">
                         <span className="text-yellow-400 font-bold text-sm">
                           ${player.chips.toLocaleString()}
                         </span>
                       </div>
                     </div>
-                    {player.wilds > 0 && (
-                      <div className="mt-1 bg-yellow-400/20 rounded-md px-2 py-1 border border-yellow-300/30">
-                        <div className="flex items-center justify-center gap-1">
-                          <span className="text-lg">🃏</span>
-                          <span className="text-yellow-300 font-semibold text-xs">
-                            {player.wilds} WILD{player.wilds > 1 ? "S" : ""}
-                          </span>
-                        </div>
+
+                    {player.wilds && player.wilds > 0 && (
+                      <div className="text-xs text-yellow-400 font-bold">
+                        🃏 Wild Cards Active: {player.wilds}
                       </div>
                     )}
                   </div>
 
                   <div className="mb-3">
                     <div className="flex justify-between items-center mb-2"></div>
-
-                    {index === currentPlayerIndex &&
+                    {currentPlayerIndex === index &&
                       !landedCard &&
-                      !isMoving &&
-                      !isRolling && (
-                        <div className="h-[300px] flex flex-col items-center justify-center bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-3 m-1">
-                          {roomPlayers[currentPlayerIndex]?.user_id ===
-                          currentUserId ? (
-                            <>
-                              <div className="mb-3">
-                                <MiniSlotMachine
-                                  onRollComplete={onRollComplete}
-                                  isVisible={true}
-                                  disabled={isRolling}
-                                />
-                              </div>
-                              <div className="text-center flex-1 flex flex-col items-center justify-center">
-                                <div className="text-yellow-300 font-semibold text-base mb-1 drop-shadow">
-                                  🎲 ROLL TO MOVE
-                                </div>
-                                <div className="text-white/70 text-xs font-medium">
-                                  Click the slot machine!
-                                </div>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="h-[300px] flex flex-col items-center justify-center">
-                              <div className="w-16 h-16 bg-gradient-to-br from-gray-600 to-gray-700 rounded-full flex items-center justify-center mb-3 flex-shrink-0 shadow-md border border-gray-500">
-                                <span className="text-2xl">⏳</span>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-yellow-300 font-semibold text-base mb-1 drop-shadow">
-                                  {players[currentPlayerIndex]?.name}'s Turn
-                                </div>
-                                <div className="text-white/70 text-xs font-medium">
-                                  Waiting for roll...
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                      !showMysteryCardModal &&
+                      roomPlayers[index]?.user_id === currentUserId && (
+                        <MiniSlotMachine
+                          onRollComplete={onRollComplete}
+                          isVisible={true}
+                          disabled={isMoving}
+                        />
                       )}
 
-                    {index === currentPlayerIndex && landedCard && (
-                      <div className="h-[300px] bg-gray-900/40 backdrop-blur-sm rounded-md border border-white/10 p-3 flex flex-col m-1 shadow-sm">
-                        {" "}
-                        <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex-shrink-0 drop-shadow"></div>
-                        <div className="flex items-center gap-3 mb-3 flex-shrink-0">
-                          <div className="bg-white rounded-md shadow-md p-2 w-16 h-20 flex flex-col items-center justify-center gap-1 flex-shrink-0 border border-gray-200">
-                            <div
-                              className="text-base font-semibold leading-none"
-                              style={{ color: getSuitColor(landedCard.suit) }}
-                            >
-                              {landedCard.value}
-                            </div>
-                            <div
-                              className="text-lg leading-none"
-                              style={{ color: getSuitColor(landedCard.suit) }}
-                            >
-                              {landedCard.suit}
-                            </div>
-                          </div>
-                          <div className="flex-1 grid grid-cols-2 gap-2">
-                            <div className="bg-yellow-400/20 p-2 rounded-md text-center border border-yellow-300/30 shadow-sm">
-                              <div className="text-yellow-300 font-semibold text-base drop-shadow">
-                                ${getCardPrice(landedCard.value)}
-                              </div>
-                              <div className="text-white/60 text-[9px] font-medium">
-                                Buy
-                              </div>
-                            </div>
-                            <div className="bg-green-400/20 p-2 rounded-md text-center border border-green-300/30 shadow-sm">
-                              <div className="text-green-300 font-semibold text-base drop-shadow">
-                                $
-                                {Math.floor(getCardPrice(landedCard.value) / 2)}
-                              </div>
-                              <div className="text-white/60 text-[9px] font-medium">
-                                Sell
-                              </div>
-                            </div>
+                    {currentPlayerIndex === index &&
+                      currentDiceTotal !== null &&
+                      isMoving && (
+                        <div className="mt-2 bg-yellow-400 text-black font-bold text-center py-2 px-4 rounded-lg shadow-xl animate-pulse">
+                          <div className="text-xs mb-1">Moving</div>
+                          <div className="text-2xl">
+                            {currentDiceTotal} Spaces
                           </div>
                         </div>
-                        <div className="flex gap-2 mt-auto pt-2 border-t border-white/10 flex-shrink-0">
-                          <button
-                            onClick={handleBuyCard}
-                            disabled={
-                              player.chips < getCardPrice(landedCard.value)
-                            }
-                            className="flex-1 bg-gradient-to-r from-green-400 to-emerald-400 hover:from-green-500 hover:to-emerald-500 text-white font-semibold py-2 px-3 rounded-md shadow-md transition-all hover:scale-105 active:scale-95 text-xs disabled:opacity-30 disabled:cursor-not-allowed border border-green-300/50"
+                      )}
+                  </div>
+
+                  {currentPlayerIndex === index && landedCard && (
+                    <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
+                      <div className="text-white/70 text-xs mb-2 font-semibold">
+                        Landed Card
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="bg-white rounded-lg shadow-xl p-3 w-20 h-28 flex flex-col items-center justify-center gap-1">
+                          <div
+                            className="text-2xl font-bold"
+                            style={{ color: getSuitColor(landedCard.suit) }}
                           >
-                            💰 Buy
-                          </button>
-                          <button
-                            onClick={handleStartAuction}
-                            className="bg-gradient-to-r from-yellow-400 to-orange-400 hover:from-yellow-500 hover:to-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md transition-all hover:scale-105 active:scale-95 text-xs border border-yellow-300/50"
+                            {landedCard.value}
+                          </div>
+                          <div
+                            className="text-3xl"
+                            style={{ color: getSuitColor(landedCard.suit) }}
                           >
-                            🔨
-                          </button>
+                            {landedCard.suit}
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-white text-sm mb-2">
+                            <div className="text-yellow-400 font-bold">
+                              Buy: ${getCardPrice(landedCard.value)}
+                            </div>
+                            <div className="text-gray-300">
+                              Bank: $
+                              {Math.floor(getCardPrice(landedCard.value) / 2)}
+                            </div>
+                            {detectPokerHand(
+                              player.collectedCards,
+                              player.wilds || 0
+                            ) && (
+                              <div className="text-blue-300 text-xs mt-1">
+                                Current:{" "}
+                                {
+                                  detectPokerHand(
+                                    player.collectedCards,
+                                    player.wilds || 0
+                                  )?.hand
+                                }
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleBuyCard}
+                              disabled={
+                                player.chips < getCardPrice(landedCard.value)
+                              }
+                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-4/5 rounded-lg shadow-xl transition-all hover:scale-105 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Buy
+                            </button>
+                            <button
+                              onClick={handleStartAuction}
+                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-bold py-3 px-6 rounded-lg shadow-xl transition-all hover:scale-105 text-sm"
+                            >
+                              Auction
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    )}
+                    </div>
+                  )}
+                  <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-2">
+                    {roomPlayers[index]?.user_id === currentUserId ? (
+                      // Show full details for current user
+                      player.boughtCards.length > 0 ? (
+                        <>
+                          <div className="text-white/70 text-xs mb-1.5 font-semibold">
+                            Best Hand
+                          </div>
+                          <div className="space-y-2">
+                            {(() => {
+                              const hand = detectPokerHand(
+                                player.collectedCards,
+                                player.wilds || 0
+                              );
+                              const handCards = hand?.cards || [];
+                              const remainingCards = player.boughtCards.filter(
+                                (card) =>
+                                  !handCards.some(
+                                    (hCard) =>
+                                      hCard.suit === card.suit &&
+                                      hCard.value === card.value
+                                  )
+                              );
 
-                    {!landedCard && (
-                      <div className="h-[100px] bg-gradient-to-br from-black/10 to-black/5 rounded-md border border-white/10 p-2 flex flex-col m-1 shadow-sm">
-                        <div className="text-white/80 text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-1 flex-shrink-0 drop-shadow">
-                          <span>🃏</span>
-                          <span>{player.boughtCards.length} Cards</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
-                          {roomPlayers[index]?.user_id === currentUserId ? (
-                            player.boughtCards.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                                {player.boughtCards.map((card, cardIdx) => (
-                                  <div
-                                    key={cardIdx}
-                                    className="rounded border-2 shadow-sm w-7 h-10 flex flex-col items-center justify-center bg-white"
-                                    style={{
-                                      borderColor: getSuitColor(card.suit),
-                                    }}
-                                  >
-                                    <div
-                                      className="text-[9px] font-semibold leading-none"
-                                      style={{ color: getSuitColor(card.suit) }}
-                                    >
-                                      {card.value}
+                              return (
+                                <>
+                                  {/* Poker Hand Section */}
+                                  {handCards.length > 0 && hand && (
+                                    <div>
+                                      <p className="text-xs text-yellow-400 font-bold mb-1">
+                                        {getHandDescription(hand.hand)}
+                                      </p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {handCards.map((card, cardIdx) => (
+                                          <div
+                                            key={cardIdx}
+                                            className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                            style={{ borderColor: "#FFD700" }}
+                                          >
+                                            <div
+                                              className="text-[9px] font-bold leading-none"
+                                              style={{
+                                                color: getSuitColor(card.suit),
+                                              }}
+                                            >
+                                              {card.value}
+                                            </div>
+                                            <div
+                                              className="text-xs leading-none mt-0.5"
+                                              style={{
+                                                color: getSuitColor(card.suit),
+                                              }}
+                                            >
+                                              {card.suit}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                    <div
-                                      className="text-xs leading-none mt-0.5"
-                                      style={{ color: getSuitColor(card.suit) }}
-                                    >
-                                      {card.suit}
+                                  )}
+
+                                  {/* Remaining Cards Section */}
+                                  {remainingCards.length > 0 && (
+                                    <div>
+                                      {handCards.length > 0 && (
+                                        <p className="text-xs text-white/40 mb-1">
+                                          Other Cards:
+                                        </p>
+                                      )}
+                                      <div className="flex flex-wrap gap-1">
+                                        {remainingCards.map((card, cardIdx) => (
+                                          <div
+                                            key={cardIdx}
+                                            className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                            style={{
+                                              borderColor: getSuitColor(
+                                                card.suit
+                                              ),
+                                            }}
+                                          >
+                                            <div
+                                              className="text-[9px] font-bold leading-none"
+                                              style={{
+                                                color: getSuitColor(card.suit),
+                                              }}
+                                            >
+                                              {card.value}
+                                            </div>
+                                            <div
+                                              className="text-xs leading-none mt-0.5"
+                                              style={{
+                                                color: getSuitColor(card.suit),
+                                              }}
+                                            >
+                                              {card.suit}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center h-full text-white/40 text-xs font-medium">
-                                <span>📭 No cards yet</span>
-                              </div>
-                            )
-                          ) : player.boughtCards.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {player.boughtCards.map((card, cardIdx) => (
-                                <div
-                                  key={cardIdx}
-                                  className="rounded border shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600"
-                                  style={{
-                                    borderColor: player.color,
-                                  }}
-                                >
-                                  <div className="text-white text-xs">🂠</div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-white/40 text-xs font-medium">
-                              <span>📭 No cards yet</span>
-                            </div>
-                          )}
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-white/50 text-xs text-center py-1">
+                          No cards yet
                         </div>
+                      )
+                    ) : // Hide cards for other players - show card backs
+                    player.boughtCards.length > 0 ? (
+                      <>
+                        <div className="text-white/70 text-xs mb-1.5 font-semibold">
+                          {player.boughtCards.length} Cards
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {player.boughtCards.map((_, cardIdx) => (
+                            <div
+                              key={cardIdx}
+                              className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600"
+                              style={{ borderColor: player.color }}
+                            >
+                              <div className="text-white text-xs">🂠</div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-white/50 text-xs text-center py-1">
+                        No cards yet
                       </div>
                     )}
                   </div>
@@ -2727,96 +3081,91 @@ function App() {
           })}
         </div>
       </div>
-      {showMysteryCard && (
+
+      {/* MYSTERY CARD MODAL */}
+      {showMysteryCardModal && landedMysteryCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 rounded-3xl p-8 border-4 border-yellow-400 shadow-2xl max-w-md w-full mx-4 transform animate-bounce">
+          <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 rounded-3xl p-8 border-4 border-yellow-400 shadow-2xl max-w-md w-full mx-4">
             <div className="text-center space-y-6">
               <div className="text-7xl mb-4">
-                {showMysteryCard.icon ||
-                  (showMysteryCard.deck === "Joker"
+                {landedMysteryCard.icon ||
+                  (landedMysteryCard.deck === "Joker"
                     ? "🃏"
-                    : showMysteryCard.deck === "Bomb"
+                    : landedMysteryCard.deck === "Bomb"
                       ? "💣"
-                      : "❓")}
+                      : "⚡")}
               </div>
               <h2 className="text-4xl font-black text-yellow-400 mb-2">
-                {showMysteryCard.name ||
-                  showMysteryCard.title ||
+                {landedMysteryCard.name ||
+                  landedMysteryCard.title ||
                   "Unknown Card"}
               </h2>
               <p className="text-white text-lg font-semibold">
-                {showMysteryCard.description ||
-                  showMysteryCard.text ||
+                {landedMysteryCard.description ||
+                  landedMysteryCard.text ||
                   "No description available"}
               </p>
               <div className="bg-white/10 rounded-xl p-4 border-2 border-white/20">
-                {showMysteryCard.effects.cb && (
+                {landedMysteryCard.effects.cb && (
                   <div
                     className={`text-2xl font-black ${
-                      showMysteryCard.effects.cb > 0
+                      landedMysteryCard.effects.cb > 0
                         ? "text-green-400"
                         : "text-red-400"
                     }`}
                   >
-                    {showMysteryCard.effects.cb > 0 ? "+" : ""}
-                    {showMysteryCard.effects.cb} Chips
+                    {landedMysteryCard.effects.cb > 0 ? "+" : ""}
+                    {landedMysteryCard.effects.cb} Chips
                   </div>
                 )}
-                {showMysteryCard.effects.mb && (
+                {landedMysteryCard.effects.mb && (
                   <div className="text-2xl font-black text-blue-400">
-                    Move {showMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
-                    {Math.abs(showMysteryCard.effects.mb)} spaces
+                    Move {landedMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
+                    {Math.abs(landedMysteryCard.effects.mb)} spaces
                   </div>
                 )}
-                {showMysteryCard.effects.mt && (
+                {landedMysteryCard.effects.mt && (
                   <div className="text-2xl font-black text-blue-400">
-                    Move to {showMysteryCard.effects.mt}
+                    Move to {landedMysteryCard.effects.mt}
                   </div>
                 )}
-                {showMysteryCard.effects.dr && (
+                {landedMysteryCard.effects.dr && (
                   <div className="text-2xl font-black text-yellow-400">
-                    Draw {showMysteryCard.effects.dr} card
-                    {showMysteryCard.effects.dr > 1 ? "s" : ""}
+                    Draw {landedMysteryCard.effects.dr} card
+                    {landedMysteryCard.effects.dr > 1 ? "s" : ""}
                   </div>
                 )}
-                {showMysteryCard.effects.sk && (
+                {landedMysteryCard.effects.sk && (
                   <div className="text-2xl font-black text-red-400">
-                    Skip {showMysteryCard.effects.sk} turn
-                    {showMysteryCard.effects.sk > 1 ? "s" : ""}
+                    Skip {landedMysteryCard.effects.sk} turn
+                    {landedMysteryCard.effects.sk > 1 ? "s" : ""}
                   </div>
                 )}
-                {showMysteryCard.effects.rt && (
+                {landedMysteryCard.effects.rt && (
                   <div className="text-2xl font-black text-green-400">
                     Repeat your turn
                   </div>
                 )}
-                {showMysteryCard.effects.ce && (
+                {landedMysteryCard.effects.ce && (
                   <div
                     className={`text-2xl font-black ${
-                      showMysteryCard.effects.ce > 0
+                      landedMysteryCard.effects.ce > 0
                         ? "text-green-400"
                         : "text-red-400"
                     }`}
                   >
-                    {showMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
-                    {Math.abs(showMysteryCard.effects.ce)} from each player
+                    {landedMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
+                    {Math.abs(landedMysteryCard.effects.ce)} from each player
                   </div>
                 )}
               </div>
               <button
                 onClick={() => {
                   log(
-                    "✅",
-                    "Mystery card modal closed manually",
-                    JSON.stringify(showMysteryCard, null, 2)
+                    "🎯",
+                    "Continue button clicked - proceeding with mystery card effect"
                   );
-                  setShowMysteryCard(null);
-                  setHasRolledThisTurn(false);
-                  const nextIndex =
-                    (currentPlayerIndex + 1) % playersRef.current.length;
-                  setCurrentPlayerIndex(nextIndex);
-                  currentIndexRef.current = nextIndex;
-                  log("➡️", `AUTO NEXT TURN: Player ${nextIndex}`);
+                  proceedWithMysteryCardEffect(landedMysteryCard);
                 }}
                 className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
               >
@@ -2827,7 +3176,125 @@ function App() {
         </div>
       )}
 
-      {/* MODALS */}
+      {/* VIDEO MODAL */}
+      {showVideoModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="max-w-4xl w-full bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-yellow-400 p-8">
+            <div className="flex gap-6 items-center">
+              {/* Video Side */}
+              <div className="flex-shrink-0 w-80">
+                <video
+                  autoPlay
+                  muted
+                  className="w-full h-auto rounded-lg shadow-lg border-2 border-yellow-400"
+                  onEnded={() => {
+                    setShowVideoModal(false);
+                    setLandedMysteryCard(null);
+                  }}
+                >
+                  <source src={videoPath} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+
+              {/* Text Side - COMPLETE EFFECTS DISPLAY */}
+              <div className="flex-1 text-center">
+                {/* Icon */}
+                <div className="text-6xl mb-4">
+                  {landedMysteryCard?.icon ||
+                    (landedMysteryCard?.deck === "Joker"
+                      ? "🃏"
+                      : landedMysteryCard?.deck === "Bomb"
+                        ? "💣"
+                        : "⚡")}
+                </div>
+
+                {/* Title */}
+                <h2 className="text-3xl font-bold text-white mb-4">
+                  {landedMysteryCard?.name ||
+                    landedMysteryCard?.title ||
+                    "Unknown Card"}
+                </h2>
+
+                {/* Description */}
+                <p className="text-white/90 text-lg mb-6">
+                  {landedMysteryCard?.description ||
+                    landedMysteryCard?.text ||
+                    "No description available"}
+                </p>
+
+                {/* Effects Display */}
+                <div className="bg-black border-2 border-yellow-400 rounded-xl p-4 mb-6 space-y-2">
+                  {landedMysteryCard?.effects.cb && (
+                    <div
+                      className={`text-xl font-semibold ${
+                        landedMysteryCard.effects.cb > 0
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {landedMysteryCard.effects.cb > 0 ? "+" : ""}
+                      {landedMysteryCard.effects.cb} Chips
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.mb && (
+                    <div className="text-xl font-semibold text-blue-400">
+                      Move{" "}
+                      {landedMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
+                      {Math.abs(landedMysteryCard.effects.mb)} spaces
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.mt && (
+                    <div className="text-xl font-semibold text-purple-400">
+                      Move to {landedMysteryCard.effects.mt}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.dr && (
+                    <div className="text-xl font-semibold text-yellow-400">
+                      Draw {landedMysteryCard.effects.dr} card
+                      {landedMysteryCard.effects.dr > 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.sk && (
+                    <div className="text-xl font-semibold text-red-400">
+                      Skip {landedMysteryCard.effects.sk} turn
+                      {landedMysteryCard.effects.sk > 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.rt && (
+                    <div className="text-xl font-semibold text-green-400">
+                      🔄 Repeat your turn
+                    </div>
+                  )}
+                  {landedMysteryCard?.effects.ce && (
+                    <div
+                      className={`text-xl font-semibold ${
+                        landedMysteryCard.effects.ce > 0
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {landedMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
+                      {Math.abs(landedMysteryCard.effects.ce)} from each player
+                    </div>
+                  )}
+                  {!landedMysteryCard?.effects.cb &&
+                    !landedMysteryCard?.effects.mb &&
+                    !landedMysteryCard?.effects.mt &&
+                    !landedMysteryCard?.effects.dr &&
+                    !landedMysteryCard?.effects.sk &&
+                    !landedMysteryCard?.effects.rt &&
+                    !landedMysteryCard?.effects.ce && (
+                      <div className="text-gray-400">Special effect</div>
+                    )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PENALTY MODAL */}
       {penaltyInfo && (
         <PenaltyModal
           card={penaltyInfo.card}
@@ -2842,6 +3309,8 @@ function App() {
           }}
         />
       )}
+
+      {/* AUCTION MODAL */}
       {auctionInfo && (
         <AuctionModal
           card={auctionInfo.card}
@@ -2853,11 +3322,11 @@ function App() {
           onPlaceBid={handlePlaceBid}
           onClose={() => {
             setAuctionInfo(null);
-            log("❌", "AUCTION DECLINED");
           }}
         />
       )}
 
+      {/* SELL CARDS MODAL */}
       {showSellModal && (
         <SellCardsModal
           playerCards={
@@ -2868,6 +3337,8 @@ function App() {
           onClose={() => setShowSellModal(false)}
         />
       )}
+
+      {/* RULES PANEL */}
       {showRules && <RulesPanel onClose={() => setShowRules(false)} />}
     </div>
   );
