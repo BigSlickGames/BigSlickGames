@@ -378,8 +378,11 @@ function App() {
           });
 
           // Track net chip gain from collect/pay
-          chipGain += (player.chips - oldPlayerChips);
-          log("💰", `Collect/Pay chip change: ${player.chips - oldPlayerChips}`);
+          chipGain += player.chips - oldPlayerChips;
+          log(
+            "💰",
+            `Collect/Pay chip change: ${player.chips - oldPlayerChips}`
+          );
         }
 
         playersRef.current = updated;
@@ -405,7 +408,10 @@ function App() {
             .update({ chips: newBalance })
             .eq("user_id", playerUserId);
 
-          log("💰", `Synced ${chipGain} chips to wallet. New balance: ${newBalance}`);
+          log(
+            "💰",
+            `Synced ${chipGain} chips to wallet. New balance: ${newBalance}`
+          );
         } catch (err) {
           console.error("Error syncing chips to wallet:", err);
         }
@@ -459,7 +465,11 @@ function App() {
     setMysteryCardPositions(mysteryMap);
     setJokerPositions(newJokerPositions); // Update joker positions state!
 
-    log("🃏", `Initialized ${newJokerPositions.length} joker positions:`, newJokerPositions);
+    log(
+      "🃏",
+      `Initialized ${newJokerPositions.length} joker positions:`,
+      newJokerPositions
+    );
 
     return mysteryMap;
   }, [log]);
@@ -483,7 +493,7 @@ function App() {
       const gamePlayers: Player[] = freshPlayers.map((rp, idx) => ({
         name: rp.player_name || "Unknown",
         chips: 15000, // Everyone starts with 15,000 chips in game
-        color: ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4"][idx] || "#CCCCCC",
+        color: ["#000000", "#DC143C", "#90EE90", "#ADD8E6"][idx] || "#CCCCCC",
         position: (["bottom", "left", "top", "right"][idx] || "bottom") as any,
         collectedCards: Array.isArray(rp.collected_cards)
           ? rp.collected_cards
@@ -970,15 +980,18 @@ function App() {
                 finalPosition
               );
 
+              // Only increment wilds if this is actually a Joker card
               if (mysteryCard.deck === "Joker") {
-                updated[safeIndex] = {
-                  ...updated[safeIndex],
-                  wilds: (updated[safeIndex].wilds || 0) + 1,
-                  wildCollectedAt: [
-                    ...(updated[safeIndex].wildCollectedAt || []),
-                    finalPosition,
-                  ],
-                };
+                const collectedAt = updated[safeIndex].wildCollectedAt || [];
+
+                // Prevent duplicate collection
+                if (!collectedAt.includes(finalPosition)) {
+                  updated[safeIndex] = {
+                    ...updated[safeIndex],
+                    wilds: (updated[safeIndex].wilds || 0) + 1,
+                    wildCollectedAt: [...collectedAt, finalPosition],
+                  };
+                }
               }
 
               playersRef.current = updated;
