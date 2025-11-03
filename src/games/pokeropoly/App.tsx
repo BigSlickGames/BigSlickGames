@@ -1068,6 +1068,35 @@ function App() {
     ]
   );
 
+  const getNextActivePlayer = useCallback(
+    (startIndex: number): number => {
+      const totalPlayers = playersRef.current.length;
+      if (totalPlayers === 0) return -1;
+
+      let index = startIndex % totalPlayers;
+      let attempts = 0;
+
+      // Keep searching for an active player
+      while (attempts < totalPlayers) {
+        const player = playersRef.current[index];
+
+        // Check if player exists and is not eliminated
+        if (player && !player.isEliminated && player.chips > 0) {
+          log("✅", `Found active player at index ${index}: ${player.name}`);
+          return index;
+        }
+
+        log("⏭️", `Skipping eliminated player at index ${index}`);
+        index = (index + 1) % totalPlayers;
+        attempts++;
+      }
+
+      log("❌", "No active players found!");
+      return -1;
+    },
+    [log]
+  );
+
   const handleDrawFromShoe = useCallback(
     async (total: number, isPair: boolean) => {
       if (!currentRoom || isRolling || playersRef.current.length === 0) {
@@ -1076,6 +1105,22 @@ function App() {
       }
 
       const safeIndex = getSafePlayerIndex(currentIndexRef.current, "rollDice");
+      const currentPlayer = playersRef.current[safeIndex];
+
+      // CHECK: Is current player eliminated?
+      if (currentPlayer?.isEliminated) {
+        log(
+          "⏭️",
+          "Current player is eliminated, skipping to next active player"
+        );
+        const nextIndex = getNextActivePlayer(safeIndex + 1);
+        if (nextIndex !== -1) {
+          currentIndexRef.current = nextIndex;
+          setCurrentPlayerIndex(nextIndex);
+        }
+        return;
+      }
+
       const isMyTurn = roomPlayers[safeIndex]?.user_id === currentUserId;
 
       console.log(
@@ -1090,7 +1135,7 @@ function App() {
       setCurrentPlayerIndex(safeIndex);
       setIsRolling(true);
       setHasRolledThisTurn(true);
-      setHasPair(isPair); // SET IT HERE - important!
+      setHasPair(isPair);
 
       console.log(
         `🎰 ROLLING | Player ${safeIndex} | Total: ${total} | Pair: ${isPair}`
@@ -1118,6 +1163,7 @@ function App() {
       isRolling,
       roomPlayers,
       getSafePlayerIndex,
+      getNextActivePlayer,
       handleMoveFromShoe,
       log,
     ]
@@ -1211,10 +1257,13 @@ function App() {
             // Mark player as eliminated
             setPlayers((prev) => {
               const updated = [...prev];
-              updated[safeIndex] = {
-                ...updated[safeIndex],
-                isEliminated: true,
-              };
+              if (updated[safeIndex]) {
+                updated[safeIndex] = {
+                  ...updated[safeIndex],
+                  isEliminated: true,
+                  chips: 0,
+                };
+              }
               playersRef.current = updated;
               return updated;
             });
@@ -1230,14 +1279,16 @@ function App() {
               return updated;
             });
 
-            // Update turn if needed
+            // Update turn to next active player
             const nextPlayerIdx = action.action_data.nextPlayerIndex;
-            if (nextPlayerIdx !== undefined) {
+            if (nextPlayerIdx !== undefined && nextPlayerIdx !== -1) {
+              log("🔄", `Advancing turn to player ${nextPlayerIdx}`);
               currentIndexRef.current = nextPlayerIdx;
               setCurrentPlayerIndex(nextPlayerIdx);
               setHasRolledThisTurn(false);
               setLandedCard(null);
               setPenaltyInfo(null);
+              setAuctionInfo(null);
             }
 
             // Check game over
@@ -1601,19 +1652,6 @@ function App() {
     }
   }, [currentRoom, currentUserId, roomPlayers]);
 
-  const getNextActivePlayer = (startIndex: number): number => {
-    const totalPlayers = playersRef.current.length;
-    let index = startIndex % totalPlayers;
-    let attempts = 0;
-
-    while (playersRef.current[index]?.isEliminated && attempts < totalPlayers) {
-      index = (index + 1) % totalPlayers;
-      attempts++;
-    }
-
-    return attempts < totalPlayers ? index : -1;
-  };
-
   const handleLeaveGame = useCallback(async () => {
     if (
       !confirm("Are you sure? Your bought cards will be returned to the board.")
@@ -1621,7 +1659,6 @@ function App() {
       return;
 
     try {
-      // Find the leaving player's index (not current turn player)
       const myPlayerIndex = roomPlayers.findIndex(
         (p) => p.user_id === currentUserId
       );
@@ -1640,49 +1677,44 @@ function App() {
         return;
       }
 
-      log("👋", `PLAYER LEAVING: ${playerToRemove.name}`);
+      log("👋", `PLAYER LEAVING: ${playerToRemove.name} at index ${safeIndex}`);
 
-      // 1. Mark player as eliminated and clear their cards
+      // Calculate next active player
+      const nextPlayerIndex = getNextActivePlayer(
+        currentIndexRef.current === safeIndex
+          ? safeIndex + 1
+          : currentIndexRef.current
+      );
+
+      // Mark as eliminated in database
       const { error: updateError } = await supabase
         .from("poker_opoly_players")
         .update({
           eliminated: true,
           left_at: new Date().toISOString(),
           chips: 0,
-          bought_cards: [], // Clear their bought cards
+          bought_cards: [],
         })
-        .eq("id", roomPlayerRecord.id); // Use the actual player record ID
+        .eq("id", roomPlayerRecord.id);
 
       if (updateError) {
         log("❌", "Failed to mark player eliminated", updateError);
         return;
       }
 
-      // 2. Broadcast leave action to all players
-      await RoomService.broadcastAction(
-        currentRoom.id,
-        currentUserId,
-        safeIndex,
-        "playerLeft",
-        {
-          boughtCards: playerToRemove.boughtCards || [],
-          playerName: playerToRemove.name,
-          nextPlayerIndex: getNextActivePlayer(safeIndex + 1),
-        }
-      );
-
-      // 3. Update UI: Mark player as eliminated
+      // Update local state - THIS TRIGGERS THE UI TO HIDE THE PROFILE
       setPlayers((prev) => {
         const updated = [...prev];
         updated[safeIndex] = {
           ...updated[safeIndex],
-          isEliminated: true,
+          isEliminated: true, // <-- This flag hides the profile
+          chips: 0,
         };
         playersRef.current = updated;
         return updated;
       });
 
-      // 4. Reset bought cards on board
+      // Reset card ownership
       setCardOwners((prev) => {
         const updated = { ...prev };
         Object.entries(updated).forEach(([position, ownerIdx]) => {
@@ -1693,39 +1725,50 @@ function App() {
         return updated;
       });
 
-      // 5. Advance turn to next active player
-      const nextPlayerIndex = getNextActivePlayer(safeIndex + 1);
+      // Broadcast leave action
+      await RoomService.broadcastAction(
+        currentRoom.id,
+        currentUserId,
+        safeIndex,
+        "playerLeft",
+        {
+          boughtCards: playerToRemove.boughtCards || [],
+          playerName: playerToRemove.name,
+          nextPlayerIndex: nextPlayerIndex,
+        }
+      );
 
-      await supabase
-        .from("game_rooms")
-        .update({
-          current_turn_player_index: nextPlayerIndex,
-        })
-        .eq("id", currentRoom.id);
+      // Update turn in database
+      if (nextPlayerIndex !== -1) {
+        await supabase
+          .from("game_rooms")
+          .update({
+            current_turn_player_index: nextPlayerIndex,
+          })
+          .eq("id", currentRoom.id);
 
-      currentIndexRef.current = nextPlayerIndex;
-      setCurrentPlayerIndex(nextPlayerIndex);
-      setHasRolledThisTurn(false);
-      setLandedCard(null);
-      setPenaltyInfo(null);
+        currentIndexRef.current = nextPlayerIndex;
+        setCurrentPlayerIndex(nextPlayerIndex);
+        setHasRolledThisTurn(false);
+        setLandedCard(null);
+        setPenaltyInfo(null);
+      }
 
-      // 6. Check if game should end
-      const remainingPlayers = playersRef.current.filter(
+      // Check if game should end
+      const activePlayers = playersRef.current.filter(
         (p) => !p.isEliminated && p.chips > 0
       );
 
-      if (remainingPlayers.length <= 1) {
+      if (activePlayers.length <= 1) {
         await supabase
           .from("game_rooms")
           .update({ status: "finished" })
           .eq("id", currentRoom.id);
 
-        log("🏆", "GAME ENDED - ONLY 1 PLAYER REMAINING");
+        log("🏆", "GAME ENDED - NOT ENOUGH ACTIVE PLAYERS");
       }
 
-      log("✅", "PLAYER LEFT SUCCESSFULLY");
-
-      // Redirect to homepage
+      log("✅", "PLAYER LEFT - PROFILE HIDDEN");
       navigate("/home");
     } catch (error) {
       log("❌", "ERROR LEAVING GAME", error);
@@ -1736,9 +1779,46 @@ function App() {
     currentUserId,
     roomPlayers,
     getSafePlayerIndex,
+    getNextActivePlayer,
     log,
     navigate,
   ]);
+
+  useEffect(() => {
+    if (gameMode !== "playing" || playersRef.current.length === 0) return;
+
+    const currentPlayer = playersRef.current[currentIndexRef.current];
+
+    // If current player is eliminated, automatically advance to next active player
+    if (currentPlayer && currentPlayer.isEliminated) {
+      log(
+        "⏭️",
+        `Current player ${currentPlayer.name} is eliminated, skipping turn`
+      );
+
+      const nextIndex = getNextActivePlayer(currentIndexRef.current + 1);
+
+      if (nextIndex !== -1 && nextIndex !== currentIndexRef.current) {
+        log("🔄", `Auto-advancing to player ${nextIndex}`);
+
+        // Update turn
+        currentIndexRef.current = nextIndex;
+        setCurrentPlayerIndex(nextIndex);
+        setHasRolledThisTurn(false);
+        setLandedCard(null);
+        setPenaltyInfo(null);
+
+        // Update database
+        if (currentRoom) {
+          supabase
+            .from("game_rooms")
+            .update({ current_turn_player_index: nextIndex })
+            .eq("id", currentRoom.id)
+            .then(() => log("✅", "Turn updated in database"));
+        }
+      }
+    }
+  }, [currentPlayerIndex, gameMode, getNextActivePlayer, log, currentRoom]);
 
   const handleStartGame = useCallback(async () => {
     if (!currentRoom || !isHost) return;
@@ -2408,7 +2488,6 @@ function App() {
           </div>
         )}
       </div>
-
       {/* AUCTION BIDS PANEL */}
       {auctionInitiatorIndex ===
         roomPlayers.findIndex((p) => p.user_id === currentUserId) &&
@@ -2460,7 +2539,6 @@ function App() {
             </div>
           </div>
         )}
-
       {gameStarted &&
         gameMode === "playing" &&
         !gameOver &&
@@ -2474,7 +2552,6 @@ function App() {
             </button>
           </div>
         )}
-
       {/* BOARD */}
       <div className="perspective-1000 w-full h-full flex items-center justify-center">
         <div
@@ -2779,7 +2856,6 @@ function App() {
         </div>
       </div>
 
-      {/* PLAYER PROFILES */}
       <div className="perspective-1000 w-full h-full flex items-center justify-center absolute inset-0 pointer-events-none">
         <div
           className="preserve-3d relative transition-transform duration-700 ease-out"
@@ -2789,312 +2865,337 @@ function App() {
             height: "850px",
           }}
         >
-          {players.map((player, index) => {
-            log("📋", "Rendering player profile", {
-              playerIndex: index,
-              playerName: player.name,
-            });
-            const profilePositions = {
-              bottom: { x: 0, y: 230, rotateZ: 0 },
-              left: { x: -230, y: 0, rotateZ: 90 },
-              top: { x: 0, y: -230, rotateZ: 180 },
-              right: { x: 230, y: 0, rotateZ: 270 },
-            };
-            const pos = profilePositions[player.position];
-            return (
-              <div
-                key={index}
-                className="absolute pointer-events-auto"
-                style={{
-                  left: "50%",
-                  top: "50%",
-                  transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-40deg) translateZ(43px) scale(0.8)`,
-                }}
-              >
+          {players
+            .map((player, originalIndex) => ({ player, originalIndex })) // 🔥 STEP 1: Track original index
+            .filter(({ player }) => !player.isEliminated) // 🔥 STEP 2: Filter eliminated
+            .map(({ player, originalIndex }) => {
+              // 🔥 STEP 3: Use original index everywhere
+
+              log("📋", "Rendering player profile", {
+                playerIndex: originalIndex,
+                playerName: player.name,
+              });
+
+              const profilePositions = {
+                bottom: { x: 0, y: 230, rotateZ: 0 },
+                left: { x: -230, y: 0, rotateZ: 90 },
+                top: { x: 0, y: -230, rotateZ: 180 },
+                right: { x: 230, y: 0, rotateZ: 270 },
+              };
+
+              const pos = profilePositions[player.position];
+
+              return (
                 <div
-                  className="rounded-xl border-2 shadow-2xl p-4 min-w-[280px] relative"
+                  key={originalIndex} // ✅ Use original index
+                  className="absolute pointer-events-auto"
                   style={{
-                    backgroundColor: player.color,
-                    borderColor: `${player.color}`,
-                    boxShadow:
-                      currentPlayerIndex === index
-                        ? "0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.4)"
-                        : undefined,
+                    left: "50%",
+                    top: "50%",
+                    transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-40deg) translateZ(43px) scale(0.8)`,
                   }}
                 >
-                  {currentPlayerIndex === index && (
-                    <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
-                      CURRENT TURN
-                    </div>
-                  )}
-
-                  <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2">
-                        <h3
-                          className="text-white font-bold text-lg"
-                          style={{ textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}
-                        >
-                          {player.name}
-                        </h3>
-                        <span
-                          className="text-2xl"
-                          style={{
-                            color:
-                              player.suit === "♠"
-                                ? "white"
-                                : getSuitColor(player.suit),
-                          }}
-                        >
-                          {player.suit}
-                        </span>
-                      </div>
-                      <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-lg">
-                        <span className="text-yellow-400 font-bold text-sm">
-                          ${player.chips.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {player.wilds && player.wilds > 0 && (
-                      <div className="text-xs text-yellow-400 font-bold">
-                        🃏 Wild Cards Active: {player.wilds}
+                  <div
+                    className="rounded-xl border-2 shadow-2xl p-4 min-w-[280px] relative"
+                    style={{
+                      backgroundColor: player.color,
+                      borderColor: `${player.color}`,
+                      boxShadow:
+                        currentPlayerIndex === originalIndex // ✅ Use original index
+                          ? "0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.4)"
+                          : undefined,
+                    }}
+                  >
+                    {currentPlayerIndex === originalIndex && ( // ✅ Use original index
+                      <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
+                        CURRENT TURN
                       </div>
                     )}
-                  </div>
 
-                  <div className="mb-3">
-                    <div className="flex justify-between items-center mb-2"></div>
-                    {currentPlayerIndex === index &&
-                      !landedCard &&
-                      !showMysteryCardModal &&
-                      roomPlayers[index]?.user_id === currentUserId && (
-                        <MiniSlotMachine
-                          onRollComplete={onRollComplete}
-                          isVisible={true}
-                          disabled={isMoving}
-                        />
-                      )}
-
-                    {currentPlayerIndex === index &&
-                      currentDiceTotal !== null &&
-                      isMoving && (
-                        <div className="mt-2 bg-yellow-400 text-black font-bold text-center py-2 px-4 rounded-lg shadow-xl animate-pulse">
-                          <div className="text-xs mb-1">Moving</div>
-                          <div className="text-2xl">
-                            {currentDiceTotal} Spaces
-                          </div>
-                        </div>
-                      )}
-                  </div>
-
-                  {currentPlayerIndex === index && landedCard && (
                     <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
-                      <div className="text-white/70 text-xs mb-2 font-semibold">
-                        Landed Card
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white rounded-lg shadow-xl p-3 w-20 h-28 flex flex-col items-center justify-center gap-1">
-                          <div
-                            className="text-2xl font-bold"
-                            style={{ color: getSuitColor(landedCard.suit) }}
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2">
+                          <h3
+                            className="text-white font-bold text-lg"
+                            style={{ textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}
                           >
-                            {landedCard.value}
-                          </div>
-                          <div
-                            className="text-3xl"
-                            style={{ color: getSuitColor(landedCard.suit) }}
+                            {player.name}
+                          </h3>
+                          <span
+                            className="text-2xl"
+                            style={{
+                              color:
+                                player.suit === "♠"
+                                  ? "white"
+                                  : getSuitColor(player.suit),
+                            }}
                           >
-                            {landedCard.suit}
-                          </div>
+                            {player.suit}
+                          </span>
                         </div>
-                        <div className="flex-1">
-                          <div className="text-white text-sm mb-2">
-                            <div className="text-yellow-400 font-bold">
-                              Buy: ${getCardPrice(landedCard.value)}
-                            </div>
-                            <div className="text-gray-300">
-                              Bank: $
-                              {Math.floor(getCardPrice(landedCard.value) / 2)}
-                            </div>
-                            {detectPokerHand(
-                              player.collectedCards,
-                              player.wilds || 0
-                            ) && (
-                              <div className="text-blue-300 text-xs mt-1">
-                                Current:{" "}
-                                {
-                                  detectPokerHand(
-                                    player.collectedCards,
-                                    player.wilds || 0
-                                  )?.hand
-                                }
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={handleBuyCard}
-                              disabled={
-                                player.chips < getCardPrice(landedCard.value)
-                              }
-                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-4/5 rounded-lg shadow-xl transition-all hover:scale-105 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Buy
-                            </button>
-                            <button
-                              onClick={handleStartAuction}
-                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-bold py-3 px-6 rounded-lg shadow-xl transition-all hover:scale-105 text-sm"
-                            >
-                              Auction
-                            </button>
-                          </div>
+                        <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-lg">
+                          <span className="text-yellow-400 font-bold text-sm">
+                            ${player.chips.toLocaleString()}
+                          </span>
                         </div>
                       </div>
+
+                      {player.wilds && player.wilds > 0 && (
+                        <div className="text-xs text-yellow-400 font-bold">
+                          🃏 Wild Cards Active: {player.wilds}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-2">
-                    {roomPlayers[index]?.user_id === currentUserId ? (
-                      // Show full details for current user
+
+                    <div className="mb-3">
+                      <div className="flex justify-between items-center mb-2"></div>
+                      {currentPlayerIndex === originalIndex && // ✅ Use original index
+                        !landedCard &&
+                        !showMysteryCardModal &&
+                        roomPlayers[originalIndex]?.user_id ===
+                          currentUserId && ( // ✅ Use original index
+                          <MiniSlotMachine
+                            onRollComplete={onRollComplete}
+                            isVisible={true}
+                            disabled={isMoving}
+                          />
+                        )}
+
+                      {currentPlayerIndex === originalIndex && // ✅ Use original index
+                        currentDiceTotal !== null &&
+                        isMoving && (
+                          <div className="mt-2 bg-yellow-400 text-black font-bold text-center py-2 px-4 rounded-lg shadow-xl animate-pulse">
+                            <div className="text-xs mb-1">Moving</div>
+                            <div className="text-2xl">
+                              {currentDiceTotal} Spaces
+                            </div>
+                          </div>
+                        )}
+                    </div>
+
+                    {currentPlayerIndex === originalIndex &&
+                      landedCard &&
+                      roomPlayers[originalIndex]?.user_id === currentUserId && ( // ✅ ADD THIS CHECK
+                        <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-3 mb-3">
+                          <div className="text-white/70 text-xs mb-2 font-semibold">
+                            Landed Card
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="bg-white rounded-lg shadow-xl p-3 w-20 h-28 flex flex-col items-center justify-center gap-1">
+                              <div
+                                className="text-2xl font-bold"
+                                style={{ color: getSuitColor(landedCard.suit) }}
+                              >
+                                {landedCard.value}
+                              </div>
+                              <div
+                                className="text-3xl"
+                                style={{ color: getSuitColor(landedCard.suit) }}
+                              >
+                                {landedCard.suit}
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-white text-sm mb-2">
+                                <div className="text-yellow-400 font-bold">
+                                  Buy: ${getCardPrice(landedCard.value)}
+                                </div>
+                                <div className="text-gray-300">
+                                  Bank: $
+                                  {Math.floor(
+                                    getCardPrice(landedCard.value) / 2
+                                  )}
+                                </div>
+                                {detectPokerHand(
+                                  player.collectedCards,
+                                  player.wilds || 0
+                                ) && (
+                                  <div className="text-blue-300 text-xs mt-1">
+                                    Current:{" "}
+                                    {
+                                      detectPokerHand(
+                                        player.collectedCards,
+                                        player.wilds || 0
+                                      )?.hand
+                                    }
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleBuyCard}
+                                  disabled={
+                                    player.chips <
+                                    getCardPrice(landedCard.value)
+                                  }
+                                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-4/5 rounded-lg shadow-xl transition-all hover:scale-105 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Buy
+                                </button>
+                                <button
+                                  onClick={handleStartAuction}
+                                  className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-bold py-3 px-6 rounded-lg shadow-xl transition-all hover:scale-105 text-sm"
+                                >
+                                  Auction
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                    <div className="bg-gray-900/60 backdrop-blur-sm rounded-lg p-2">
+                      {roomPlayers[originalIndex]?.user_id === currentUserId ? ( // ✅ Use original index
+                        // Show full details for current user
+                        player.boughtCards.length > 0 ? (
+                          <>
+                            <div className="text-white/70 text-xs mb-1.5 font-semibold">
+                              Best Hand
+                            </div>
+                            <div className="space-y-2">
+                              {(() => {
+                                const hand = detectPokerHand(
+                                  player.collectedCards,
+                                  player.wilds || 0
+                                );
+                                const handCards = hand?.cards || [];
+                                const remainingCards =
+                                  player.boughtCards.filter(
+                                    (card) =>
+                                      !handCards.some(
+                                        (hCard) =>
+                                          hCard.suit === card.suit &&
+                                          hCard.value === card.value
+                                      )
+                                  );
+
+                                return (
+                                  <>
+                                    {/* Poker Hand Section */}
+                                    {handCards.length > 0 && hand && (
+                                      <div>
+                                        <p className="text-xs text-yellow-400 font-bold mb-1">
+                                          {getHandDescription(hand.hand)}
+                                        </p>
+                                        <div className="flex flex-wrap gap-1">
+                                          {handCards.map((card, cardIdx) => (
+                                            <div
+                                              key={cardIdx}
+                                              className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                              style={{ borderColor: "#FFD700" }}
+                                            >
+                                              <div
+                                                className="text-[9px] font-bold leading-none"
+                                                style={{
+                                                  color: getSuitColor(
+                                                    card.suit
+                                                  ),
+                                                }}
+                                              >
+                                                {card.value}
+                                              </div>
+                                              <div
+                                                className="text-xs leading-none mt-0.5"
+                                                style={{
+                                                  color: getSuitColor(
+                                                    card.suit
+                                                  ),
+                                                }}
+                                              >
+                                                {card.suit}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Remaining Cards Section */}
+                                    {remainingCards.length > 0 && (
+                                      <div>
+                                        {handCards.length > 0 && (
+                                          <p className="text-xs text-white/40 mb-1">
+                                            Other Cards:
+                                          </p>
+                                        )}
+                                        <div className="flex flex-wrap gap-1">
+                                          {remainingCards.map(
+                                            (card, cardIdx) => (
+                                              <div
+                                                key={cardIdx}
+                                                className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
+                                                style={{
+                                                  borderColor: getSuitColor(
+                                                    card.suit
+                                                  ),
+                                                }}
+                                              >
+                                                <div
+                                                  className="text-[9px] font-bold leading-none"
+                                                  style={{
+                                                    color: getSuitColor(
+                                                      card.suit
+                                                    ),
+                                                  }}
+                                                >
+                                                  {card.value}
+                                                </div>
+                                                <div
+                                                  className="text-xs leading-none mt-0.5"
+                                                  style={{
+                                                    color: getSuitColor(
+                                                      card.suit
+                                                    ),
+                                                  }}
+                                                >
+                                                  {card.suit}
+                                                </div>
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-white/50 text-xs text-center py-1">
+                            No cards yet
+                          </div>
+                        )
+                      ) : // Hide cards for other players - show card backs
                       player.boughtCards.length > 0 ? (
                         <>
                           <div className="text-white/70 text-xs mb-1.5 font-semibold">
-                            Best Hand
+                            {player.boughtCards.length} Cards
                           </div>
-                          <div className="space-y-2">
-                            {(() => {
-                              const hand = detectPokerHand(
-                                player.collectedCards,
-                                player.wilds || 0
-                              );
-                              const handCards = hand?.cards || [];
-                              const remainingCards = player.boughtCards.filter(
-                                (card) =>
-                                  !handCards.some(
-                                    (hCard) =>
-                                      hCard.suit === card.suit &&
-                                      hCard.value === card.value
-                                  )
-                              );
-
-                              return (
-                                <>
-                                  {/* Poker Hand Section */}
-                                  {handCards.length > 0 && hand && (
-                                    <div>
-                                      <p className="text-xs text-yellow-400 font-bold mb-1">
-                                        {getHandDescription(hand.hand)}
-                                      </p>
-                                      <div className="flex flex-wrap gap-1">
-                                        {handCards.map((card, cardIdx) => (
-                                          <div
-                                            key={cardIdx}
-                                            className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
-                                            style={{ borderColor: "#FFD700" }}
-                                          >
-                                            <div
-                                              className="text-[9px] font-bold leading-none"
-                                              style={{
-                                                color: getSuitColor(card.suit),
-                                              }}
-                                            >
-                                              {card.value}
-                                            </div>
-                                            <div
-                                              className="text-xs leading-none mt-0.5"
-                                              style={{
-                                                color: getSuitColor(card.suit),
-                                              }}
-                                            >
-                                              {card.suit}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Remaining Cards Section */}
-                                  {remainingCards.length > 0 && (
-                                    <div>
-                                      {handCards.length > 0 && (
-                                        <p className="text-xs text-white/40 mb-1">
-                                          Other Cards:
-                                        </p>
-                                      )}
-                                      <div className="flex flex-wrap gap-1">
-                                        {remainingCards.map((card, cardIdx) => (
-                                          <div
-                                            key={cardIdx}
-                                            className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-white"
-                                            style={{
-                                              borderColor: getSuitColor(
-                                                card.suit
-                                              ),
-                                            }}
-                                          >
-                                            <div
-                                              className="text-[9px] font-bold leading-none"
-                                              style={{
-                                                color: getSuitColor(card.suit),
-                                              }}
-                                            >
-                                              {card.value}
-                                            </div>
-                                            <div
-                                              className="text-xs leading-none mt-0.5"
-                                              style={{
-                                                color: getSuitColor(card.suit),
-                                              }}
-                                            >
-                                              {card.suit}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
+                          <div className="flex flex-wrap gap-1">
+                            {player.boughtCards.map((_, cardIdx) => (
+                              <div
+                                key={cardIdx}
+                                className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600"
+                                style={{ borderColor: player.color }}
+                              >
+                                <div className="text-white text-xs">🂠</div>
+                              </div>
+                            ))}
                           </div>
                         </>
                       ) : (
                         <div className="text-white/50 text-xs text-center py-1">
                           No cards yet
                         </div>
-                      )
-                    ) : // Hide cards for other players - show card backs
-                    player.boughtCards.length > 0 ? (
-                      <>
-                        <div className="text-white/70 text-xs mb-1.5 font-semibold">
-                          {player.boughtCards.length} Cards
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {player.boughtCards.map((_, cardIdx) => (
-                            <div
-                              key={cardIdx}
-                              className="rounded border-2 shadow-sm w-9 h-12 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600"
-                              style={{ borderColor: player.color }}
-                            >
-                              <div className="text-white text-xs">🂠</div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-white/50 text-xs text-center py-1">
-                        No cards yet
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </div>
-
       {/* MYSTERY CARD MODAL */}
       {showMysteryCardModal && landedMysteryCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -3188,7 +3289,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* VIDEO MODAL */}
       {showVideoModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -3306,7 +3406,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* PENALTY MODAL */}
       {penaltyInfo && (
         <PenaltyModal
@@ -3322,7 +3421,6 @@ function App() {
           }}
         />
       )}
-
       {/* AUCTION MODAL */}
       {auctionInfo && (
         <AuctionModal
@@ -3338,7 +3436,6 @@ function App() {
           }}
         />
       )}
-
       {/* SELL CARDS MODAL */}
       {showSellModal && (
         <SellCardsModal
@@ -3350,7 +3447,6 @@ function App() {
           onClose={() => setShowSellModal(false)}
         />
       )}
-
       {/* RULES PANEL */}
       {showRules && <RulesPanel onClose={() => setShowRules(false)} />}
     </div>
