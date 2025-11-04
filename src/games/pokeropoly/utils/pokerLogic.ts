@@ -31,10 +31,6 @@ const getCardNumericValue = (value: string): number => {
   return parseInt(value);
 };
 
-const normalizeValue = (value: string): string => {
-  return value;
-};
-
 export const getCardPrice = (value: string): number => {
   const priceMap: { [key: string]: number } = {
     "2": 200,
@@ -54,209 +50,59 @@ export const getCardPrice = (value: string): number => {
   return priceMap[value] || 0;
 };
 
-export const detectPokerHand = (
-  cards: (Card | null)[],
-  wilds: number = 0 // ADD WILDS PARAMETER
-): HandResult | null => {
-  console.log("🔍 detectPokerHand called with:", {
-    cards: cards.length,
-    wilds,
-  });
-
-  if (!cards || cards.length === 0) {
-    console.log("⚠️ No cards provided, returning High Card");
-    return {
-      hand: "High Card",
-      cards: [],
-      multiplier: 0.33,
-    };
-  }
-
-  const validCards = cards.filter(
-    (card): card is Card =>
-      card !== null && card.suit !== "" && card.value !== ""
-  );
-
-  // ADD WILD CARDS TO THE HAND
-  const wildCards: Card[] = Array(wilds).fill({ suit: "WILD", value: "WILD" });
-  const allCards = [...validCards, ...wildCards];
-
-  console.log("✅ Valid cards after filtering:", {
-    validCards: validCards.length,
-    wilds,
-    total: allCards.length,
-  });
-
-  if (allCards.length === 0) {
-    console.log("⚠️ No valid cards, returning null");
-    return null;
-  }
-
-  const sortedCards = [...allCards].sort(
-    (a, b) => getCardNumericValue(b.value) - getCardNumericValue(a.value)
-  );
-
-  const valueCounts: { [key: string]: Card[] } = {};
-  const suitCounts: { [key: string]: Card[] } = {};
-  let wildCount = 0;
-
-  sortedCards.forEach((card) => {
-    // Count wilds separately
-    if (card.value === "WILD") {
-      wildCount++;
-      return;
-    }
-
-    const normalizedValue = card.value.toUpperCase();
-    if (!valueCounts[normalizedValue]) valueCounts[normalizedValue] = [];
-    valueCounts[normalizedValue].push(card);
-
-    if (!suitCounts[card.suit]) suitCounts[card.suit] = [];
-    suitCounts[card.suit].push(card);
-  });
-
-  // Use wilds to boost hand detection
-  const valueCountsArray = Object.values(valueCounts);
-
-  // Four of a Kind (with wilds)
-  const bestThree = valueCountsArray.find((cards) => cards.length === 3);
-  if (bestThree && wildCount >= 1) {
-    console.log("🃏 FOUR OF A KIND WITH WILD!");
-    return {
-      hand: "Four of a Kind",
-      cards: [...bestThree, wildCards[0]],
-      multiplier: 5,
-    };
-  }
-
-  const hasFour = valueCountsArray.find((cards) => cards.length === 4);
-  if (hasFour) {
-    console.log("🎰 FOUR OF A KIND DETECTED!");
-    return { hand: "Four of a Kind", cards: hasFour, multiplier: 5 };
-  }
-
-  // Full House (with wilds)
-  const hasThree = valueCountsArray.find((cards) => cards.length === 3);
-  const hasPair = valueCountsArray.find((cards) => cards.length === 2);
-
-  if (hasThree && hasPair) {
-    console.log("🎰 FULL HOUSE DETECTED!");
-    return {
-      hand: "Full House",
-      cards: [...hasThree, ...hasPair],
-      multiplier: 4,
-    };
-  }
-
-  // Full House with wild
-  if (hasThree && wildCount >= 2) {
-    console.log("🃏 FULL HOUSE WITH WILDS!");
-    return {
-      hand: "Full House",
-      cards: [...hasThree, ...wildCards.slice(0, 2)],
-      multiplier: 4,
-    };
-  }
-
-  const isFlush = Object.values(suitCounts).some((cards) => cards.length >= 5);
-  const isStraight = checkStraight(
-    sortedCards.filter((c) => c.value !== "WILD")
-  );
-
-  // Flush & Straight checks
-  if (isFlush && isStraight) {
-    const flushCards = Object.values(suitCounts).find(
-      (cards) => cards.length >= 5
-    )!;
-    const straightInFlush = checkStraight(flushCards);
-    if (straightInFlush) {
-      const values = flushCards.map((c) => getCardNumericValue(c.value));
-      const isRoyal =
-        values.includes(14) &&
-        values.includes(13) &&
-        values.includes(12) &&
-        values.includes(11) &&
-        values.includes(10);
-      if (isRoyal) {
-        console.log("🎰 ROYAL FLUSH DETECTED!");
-        return {
-          hand: "Royal Flush",
-          cards: flushCards.slice(0, 5),
-          multiplier: 8,
-        };
-      }
-      console.log("🎰 STRAIGHT FLUSH DETECTED!");
-      return {
-        hand: "Straight Flush",
-        cards: flushCards.slice(0, 5),
-        multiplier: 6,
-      };
-    }
-  }
-
-  if (isFlush) {
-    const flushCards = Object.values(suitCounts).find(
-      (cards) => cards.length >= 5
-    )!;
-    console.log("🎰 FLUSH DETECTED!");
-    return { hand: "Flush", cards: flushCards.slice(0, 5), multiplier: 3 };
-  }
-
-  if (isStraight) {
-    console.log("🎰 STRAIGHT DETECTED!");
-    return { hand: "Straight", cards: sortedCards.slice(0, 5), multiplier: 3 };
-  }
-
-  // Three of a Kind (with wilds)
-  if (hasPair && wildCount >= 1) {
-    console.log("🃏 THREE OF A KIND WITH WILD!");
-    return {
-      hand: "Three of a Kind",
-      cards: [...hasPair, wildCards[0]],
-      multiplier: 2.5,
-    };
-  }
-
-  if (hasThree) {
-    console.log("🎰 THREE OF A KIND DETECTED!");
-    return { hand: "Three of a Kind", cards: hasThree, multiplier: 2.5 };
-  }
-
-  const pairs = valueCountsArray.filter((cards) => cards.length === 2);
-  if (pairs.length >= 2) {
-    console.log("🎰 TWO PAIR DETECTED!");
-    return {
-      hand: "Two Pair",
-      cards: [...pairs[0], ...pairs[1]],
-      multiplier: 2,
-    };
-  }
-
-  // Pair (with wild)
-  if (wildCount >= 1 && validCards.length >= 1) {
-    console.log("🃏 PAIR WITH WILD!");
-    return {
-      hand: "Pair",
-      cards: [validCards[0], wildCards[0]],
-      multiplier: 1.5,
-    };
-  }
-
-  if (hasPair) {
-    console.log("🎰 PAIR DETECTED!");
-    return { hand: "Pair", cards: hasPair, multiplier: 1.5 };
-  }
-
-  console.log("🎰 HIGH CARD");
-  return { hand: "High Card", cards: [sortedCards[0]], multiplier: 0.33 };
+// Helper function to get hand rank (higher = better)
+const getHandRank = (hand: PokerHand): number => {
+  const ranks = {
+    "Royal Flush": 10,
+    "Straight Flush": 9,
+    "Four of a Kind": 8,
+    "Full House": 7,
+    Flush: 6,
+    Straight: 5,
+    "Three of a Kind": 4,
+    "Two Pair": 3,
+    Pair: 2,
+    "High Card": 1,
+  };
+  return ranks[hand];
 };
 
-const checkStraight = (cards: Card[]): boolean => {
-  if (cards.length < 5) return false;
+// Compare two hands and return true if hand1 is better than hand2
+const isBetterHand = (
+  hand1: HandResult | null,
+  hand2: HandResult | null
+): boolean => {
+  if (!hand1) return false;
+  if (!hand2) return true;
+
+  const rank1 = getHandRank(hand1.hand);
+  const rank2 = getHandRank(hand2.hand);
+
+  if (rank1 !== rank2) return rank1 > rank2;
+
+  // If same hand type, compare high cards
+  const values1 = hand1.cards
+    .map((c) => getCardNumericValue(c.value))
+    .sort((a, b) => b - a);
+  const values2 = hand2.cards
+    .map((c) => getCardNumericValue(c.value))
+    .sort((a, b) => b - a);
+
+  for (let i = 0; i < Math.min(values1.length, values2.length); i++) {
+    if (values1[i] !== values2[i]) return values1[i] > values2[i];
+  }
+
+  return false;
+};
+
+// Check for straight in a set of cards
+const checkStraight = (cards: Card[]): Card[] | null => {
+  if (cards.length < 5) return null;
 
   const values = cards.map((c) => getCardNumericValue(c.value));
   const uniqueValues = Array.from(new Set(values)).sort((a, b) => b - a);
 
+  // Check for regular straights
   for (let i = 0; i <= uniqueValues.length - 5; i++) {
     let consecutive = true;
     for (let j = 0; j < 4; j++) {
@@ -265,10 +111,17 @@ const checkStraight = (cards: Card[]): boolean => {
         break;
       }
     }
-    if (consecutive) return true;
+    if (consecutive) {
+      // Found a straight, return the cards that form it
+      const straightValues = uniqueValues.slice(i, i + 5);
+      const straightCards = straightValues
+        .map((val) => cards.find((c) => getCardNumericValue(c.value) === val))
+        .filter((c): c is Card => c !== undefined);
+      return straightCards;
+    }
   }
 
-  // Check for A-2-3-4-5 straight
+  // Check for A-2-3-4-5 straight (wheel)
   if (
     uniqueValues.includes(14) &&
     uniqueValues.includes(5) &&
@@ -276,10 +129,280 @@ const checkStraight = (cards: Card[]): boolean => {
     uniqueValues.includes(3) &&
     uniqueValues.includes(2)
   ) {
-    return true;
+    const wheelCards = [14, 5, 4, 3, 2]
+      .map((val) => cards.find((c) => getCardNumericValue(c.value) === val))
+      .filter((c): c is Card => c !== undefined);
+    return wheelCards;
   }
 
-  return false;
+  return null;
+};
+
+// Detect hand without wilds
+const detectHandWithoutWilds = (cards: Card[]): HandResult | null => {
+  if (cards.length === 0) {
+    return {
+      hand: "High Card",
+      cards: [],
+      multiplier: 0.33,
+    };
+  }
+
+  const sortedCards = [...cards].sort(
+    (a, b) => getCardNumericValue(b.value) - getCardNumericValue(a.value)
+  );
+
+  // Count values and suits
+  const valueCounts: { [key: string]: Card[] } = {};
+  const suitCounts: { [key: string]: Card[] } = {};
+
+  sortedCards.forEach((card) => {
+    const value = card.value;
+    if (!valueCounts[value]) valueCounts[value] = [];
+    valueCounts[value].push(card);
+
+    if (!suitCounts[card.suit]) suitCounts[card.suit] = [];
+    suitCounts[card.suit].push(card);
+  });
+
+  const valueCountsArray = Object.values(valueCounts).sort(
+    (a, b) => b.length - a.length
+  );
+
+  // Check for flush
+  const flushSuit = Object.entries(suitCounts).find(
+    ([_, cards]) => cards.length >= 5
+  );
+  const isFlush = flushSuit !== undefined;
+  const flushCards = flushSuit ? flushSuit[1] : [];
+
+  // Check for straight
+  const straightCards = checkStraight(sortedCards);
+  const isStraight = straightCards !== null;
+
+  // Check for straight flush
+  if (isFlush && flushCards.length >= 5) {
+    const straightFlushCards = checkStraight(flushCards);
+    if (straightFlushCards && straightFlushCards.length >= 5) {
+      const values = straightFlushCards.map((c) =>
+        getCardNumericValue(c.value)
+      );
+      const isRoyal =
+        values.includes(14) &&
+        values.includes(13) &&
+        values.includes(12) &&
+        values.includes(11) &&
+        values.includes(10);
+
+      if (isRoyal) {
+        return {
+          hand: "Royal Flush",
+          cards: straightFlushCards.slice(0, 5),
+          multiplier: 8,
+        };
+      }
+      return {
+        hand: "Straight Flush",
+        cards: straightFlushCards.slice(0, 5),
+        multiplier: 6,
+      };
+    }
+  }
+
+  // Check for four of a kind
+  const hasFour = valueCountsArray.find((cards) => cards.length === 4);
+  if (hasFour) {
+    return { hand: "Four of a Kind", cards: hasFour, multiplier: 5 };
+  }
+
+  // Check for full house
+  const hasThree = valueCountsArray.find((cards) => cards.length === 3);
+  const hasPair = valueCountsArray.find(
+    (cards) => cards.length === 2 && cards !== hasThree
+  );
+
+  if (hasThree && hasPair) {
+    return {
+      hand: "Full House",
+      cards: [...hasThree, ...hasPair],
+      multiplier: 4,
+    };
+  }
+
+  // Check for flush
+  if (isFlush) {
+    return { hand: "Flush", cards: flushCards.slice(0, 5), multiplier: 3 };
+  }
+
+  // Check for straight
+  if (isStraight && straightCards) {
+    return {
+      hand: "Straight",
+      cards: straightCards.slice(0, 5),
+      multiplier: 3,
+    };
+  }
+
+  // Check for three of a kind
+  if (hasThree) {
+    return { hand: "Three of a Kind", cards: hasThree, multiplier: 2.5 };
+  }
+
+  // Check for two pair
+  const pairs = valueCountsArray.filter((cards) => cards.length === 2);
+  if (pairs.length >= 2) {
+    return {
+      hand: "Two Pair",
+      cards: [...pairs[0], ...pairs[1]],
+      multiplier: 2,
+    };
+  }
+
+  // Check for pair
+  if (pairs.length === 1) {
+    return { hand: "Pair", cards: pairs[0], multiplier: 1.5 };
+  }
+
+  // High card
+  return { hand: "High Card", cards: [sortedCards[0]], multiplier: 0.33 };
+};
+
+// Main function to detect poker hand with wild cards
+export const detectPokerHand = (
+  cards: (Card | null)[],
+  wilds: number = 0
+): HandResult | null => {
+  console.log("🔍 detectPokerHand called with:", {
+    cards: cards.length,
+    wilds,
+  });
+
+  // Filter valid cards
+  const validCards = cards.filter(
+    (card): card is Card =>
+      card !== null && card.suit !== "" && card.value !== ""
+  );
+
+  console.log("✅ Valid cards after filtering:", {
+    validCards: validCards.length,
+    wilds,
+    total: validCards.length + wilds,
+  });
+
+  // If no cards at all
+  if (validCards.length === 0 && wilds === 0) {
+    return {
+      hand: "High Card",
+      cards: [],
+      multiplier: 0.33,
+    };
+  }
+
+  // If no wilds, just check normally
+  if (wilds === 0) {
+    const result = detectHandWithoutWilds(validCards);
+    console.log("🎰 No wilds, result:", result?.hand);
+    return result;
+  }
+
+  // WITH WILDS: Try all possible wild card combinations
+  let bestHand: HandResult | null = null;
+  const wildValues = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+    "A",
+  ];
+  const suits = ["♠", "♥", "♦", "♣"];
+
+  console.log(`🃏 Testing ${wilds} wild card(s)...`);
+
+  if (wilds === 1) {
+    // Try each possible value and suit for the wild card
+    for (const value of wildValues) {
+      for (const suit of suits) {
+        const testCards = [...validCards, { suit, value }];
+        const result = detectHandWithoutWilds(testCards);
+
+        if (isBetterHand(result, bestHand)) {
+          bestHand = result;
+          console.log(
+            `🃏 Found better hand with wild as ${value}${suit}: ${result?.hand}`
+          );
+        }
+      }
+    }
+  } else if (wilds === 2) {
+    // Try each possible combination for 2 wild cards
+    for (const value1 of wildValues) {
+      for (const suit1 of suits) {
+        for (const value2 of wildValues) {
+          for (const suit2 of suits) {
+            const testCards = [
+              ...validCards,
+              { suit: suit1, value: value1 },
+              { suit: suit2, value: value2 },
+            ];
+            const result = detectHandWithoutWilds(testCards);
+
+            if (isBetterHand(result, bestHand)) {
+              bestHand = result;
+              console.log(
+                `🃏 Found better hand with wilds as ${value1}${suit1} and ${value2}${suit2}: ${result?.hand}`
+              );
+            }
+          }
+        }
+      }
+    }
+  } else if (wilds >= 3) {
+    // For 3+ wilds, use a simplified approach (checking common high hands)
+    // This prevents combinatorial explosion
+    console.log("🃏 3+ wilds - using simplified approach");
+
+    // Try for Royal Flush (best possible)
+    for (const suit of suits) {
+      const testCards = [
+        ...validCards,
+        { suit, value: "A" },
+        { suit, value: "K" },
+        { suit, value: "Q" },
+        { suit, value: "J" },
+        { suit, value: "10" },
+      ];
+      const result = detectHandWithoutWilds(testCards);
+      if (isBetterHand(result, bestHand)) {
+        bestHand = result;
+      }
+    }
+
+    // Try for Four of a Kind with highest cards
+    for (const value of ["A", "K", "Q", "J", "10"]) {
+      const testCards = [
+        ...validCards,
+        { suit: "♠", value },
+        { suit: "♥", value },
+        { suit: "♦", value },
+        { suit: "♣", value },
+      ];
+      const result = detectHandWithoutWilds(testCards);
+      if (isBetterHand(result, bestHand)) {
+        bestHand = result;
+      }
+    }
+  }
+
+  console.log(`🎰 Best hand found with ${wilds} wild(s): ${bestHand?.hand}`);
+  return bestHand;
 };
 
 const calculateRankFactor = (handResult: HandResult): number => {
@@ -287,6 +410,8 @@ const calculateRankFactor = (handResult: HandResult): number => {
   const ranks = cards
     .filter((c) => c.value !== "WILD")
     .map((c) => getCardNumericValue(c.value));
+
+  if (ranks.length === 0) return 1; // All wilds
 
   switch (hand) {
     case "Royal Flush":
@@ -312,9 +437,12 @@ const calculateRankFactor = (handResult: HandResult): number => {
       let pairRank = 0;
 
       for (const [rank, count] of Object.entries(valueCounts)) {
-        if (count === 3) tripleRank = parseInt(rank);
-        if (count === 2) pairRank = parseInt(rank);
+        if (count >= 3) tripleRank = parseInt(rank);
+        else if (count >= 2) pairRank = parseInt(rank);
       }
+
+      if (tripleRank === 0) tripleRank = ranks[0];
+      if (pairRank === 0) pairRank = ranks[0];
 
       return (3 * tripleRank + 2 * pairRank) / 5 / 14;
     }
@@ -335,7 +463,7 @@ const calculateRankFactor = (handResult: HandResult): number => {
 
 export const calculatePenaltyForHand = (
   cards: Card[],
-  wilds: number = 0 // ADD WILDS PARAMETER
+  wilds: number = 0
 ): { handType: string; penalty: number } => {
   console.log("💰 calculatePenaltyForHand called with:", {
     cards: cards.length,
@@ -375,7 +503,7 @@ export const calculatePenalty = (
   card: Card,
   ownerCards: (Card | null)[],
   ownerBoughtCards: any[] = [],
-  ownerWilds: number = 0 // ADD WILDS PARAMETER
+  ownerWilds: number = 0
 ): { penalty: number; hand: PokerHand | null } => {
   console.log("💸 calculatePenalty called with wilds:", ownerWilds);
   console.log("💸 Card:", card);
@@ -412,18 +540,20 @@ export const calculatePenalty = (
   return { penalty: basePenalty, hand: null };
 };
 
-export const getHandDescription = (hand: PokerHand): string => {
+export const getHandDescription = (handResult: HandResult): string => {
+  if (!handResult) return "No hand";
+
   const descriptions: { [key in PokerHand]: string } = {
-    "Royal Flush": "8x multiplier - A, K, Q, J, 10 of same suit",
-    "Straight Flush": "6x multiplier - 5 consecutive cards of same suit",
-    "Four of a Kind": "5x multiplier - 4 cards of same value",
-    "Full House": "4x multiplier - 3 of a kind + pair",
-    Flush: "3x multiplier - 5 cards of same suit",
-    Straight: "3x multiplier - 5 consecutive cards",
-    "Three of a Kind": "2.5x multiplier - 3 cards of same value",
-    "Two Pair": "2x multiplier - 2 pairs of cards",
-    Pair: "1.5x multiplier - 2 cards of same value",
+    "Royal Flush": "8x - A, K, Q, J, 10 of same suit",
+    "Straight Flush": "6x - 5 consecutive cards of same suit",
+    "Four of a Kind": "5x - 4 cards of same value",
+    "Full House": "4x - 3 of a kind + pair",
+    Flush: "3x - 5 cards of same suit",
+    Straight: "3x - 5 consecutive cards",
+    "Three of a Kind": "2.5x - 3 cards of same value",
+    "Two Pair": "2x - 2 pairs of cards",
+    Pair: "1.5x - 2 cards of same value",
     "High Card": "No multiplier - No poker hand",
   };
-  return descriptions[hand];
+  return descriptions[handResult.hand];
 };

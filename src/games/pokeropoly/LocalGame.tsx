@@ -39,6 +39,7 @@ interface Player {
   jokers: Array<{ collectedAtPosition: number }>;
   wilds?: number;
   wildCollectedAt?: number[]; // Track all positions where wilds were collected
+  isBankrupt?: boolean; // NEW: Track if player is bankrupt
 }
 
 function LocalGame() {
@@ -47,7 +48,8 @@ function LocalGame() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.3); // 30% default volume
-
+  const [winner, setWinner] = useState<number | null>(null);
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [jokerPositions, setJokerPositions] = useState<number[]>([]);
   useEffect(() => {
     console.log("🔍 jokerPositions state changed:", jokerPositions);
@@ -150,7 +152,7 @@ function LocalGame() {
   const [players, setPlayers] = useState<Player[]>([
     {
       name: "Player 1",
-      chips: 10000,
+      chips: 100000,
       color: "#000000",
       position: "bottom",
       collectedCards: [],
@@ -158,10 +160,11 @@ function LocalGame() {
       boardPosition: 0,
       suit: "♠",
       jokers: [],
+      isBankrupt: false,
     },
     {
       name: "Player 2",
-      chips: 10000,
+      chips: 0,
       color: "#DC143C",
       position: "left",
       collectedCards: [],
@@ -169,10 +172,11 @@ function LocalGame() {
       boardPosition: 16,
       suit: "♥",
       jokers: [],
+      isBankrupt: false,
     },
     {
       name: "Player 3",
-      chips: 10000,
+      chips: 0,
       color: "#90EE90",
       position: "top",
       collectedCards: [],
@@ -180,10 +184,11 @@ function LocalGame() {
       boardPosition: 32,
       suit: "♦",
       jokers: [],
+      isBankrupt: false,
     },
     {
       name: "Player 4",
-      chips: 10000,
+      chips: 0,
       color: "#ADD8E6",
       position: "right",
       collectedCards: [],
@@ -191,6 +196,7 @@ function LocalGame() {
       boardPosition: 48,
       suit: "♣",
       jokers: [],
+      isBankrupt: false,
     },
   ]);
 
@@ -603,12 +609,86 @@ function LocalGame() {
     proceedWithMysteryCardEffect(mysteryCard);
   };
 
+  const checkForWinner = useCallback(() => {
+    const activePlayers = players.filter((p) => !p.isBankrupt);
+
+    if (activePlayers.length === 1) {
+      const winnerIndex = players.findIndex((p) => !p.isBankrupt);
+      setWinner(winnerIndex);
+      setShowWinnerModal(true);
+      setIsAutoPlaying(false); // Stop auto-play if running
+
+      // Stop music
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+
+      // Play victory sound
+      const victorySound = new Audio("/games/pokeropoly/sound/victory.mp3");
+      victorySound.volume = 0.8;
+      victorySound.play().catch((e) => console.log("Victory sound failed:", e));
+
+      console.log("🏆 Winner detected:", players[winnerIndex].name);
+    }
+  }, [players]);
+
   const endTurn = () => {
     console.log("endTurn: Ending turn for player", { currentPlayerIndex });
     setCurrentPlayerIndex((prev) => {
-      const nextIndex = (prev + 1) % 4;
+      let nextIndex = (prev + 1) % 4;
+
+      // Skip bankrupt players
+      let skipCount = 0;
+      while (players[nextIndex].isBankrupt && skipCount < 4) {
+        console.log("endTurn: Skipping bankrupt player", { nextIndex });
+        nextIndex = (nextIndex + 1) % 4;
+        skipCount++;
+      }
+
+      // If all players are bankrupt (shouldn't happen), stay on current
+      if (skipCount === 4) {
+        console.log("endTurn: All players bankrupt, game over");
+        return prev;
+      }
+
       console.log("endTurn: Set next player", { nextIndex });
       return nextIndex;
+    });
+  };
+
+  const releasePlayerCards = (playerIndex: number) => {
+    console.log("releasePlayerCards: Releasing cards for player", {
+      playerIndex,
+    });
+
+    setPlayers((prev) => {
+      const newPlayers = [...prev];
+      const player = newPlayers[playerIndex];
+
+      // Clear the player's cards
+      player.collectedCards = [];
+      player.boughtCards = [];
+
+      console.log("releasePlayerCards: Cleared player cards", { playerIndex });
+      return newPlayers;
+    });
+
+    // Remove ownership from all cards owned by this player
+    setCardOwners((prev) => {
+      const newOwners = { ...prev };
+
+      // Find all positions owned by this player and remove ownership
+      Object.keys(newOwners).forEach((positionStr) => {
+        const position = parseInt(positionStr);
+        if (newOwners[position] === playerIndex) {
+          delete newOwners[position];
+          console.log("releasePlayerCards: Released card at position", {
+            position,
+          });
+        }
+      });
+
+      return newOwners;
     });
   };
   // New helper function - extract the actual effect processing
@@ -624,6 +704,7 @@ function LocalGame() {
       );
 
       // Handle chip bonus/penalty (cb)
+      // Handle chip bonus/penalty (cb)
       if (effects.cb !== undefined) {
         console.log(`💰 Applying chip effect: ${effects.cb}`);
         setPlayers((prev) => {
@@ -635,6 +716,21 @@ function LocalGame() {
               0,
               newPlayers[safeIndex].chips + effects.cb!
             );
+
+            // Check for bankruptcy after chip penalty
+            // Check for bankruptcy after chip penalty
+            if (newPlayers[safeIndex].chips <= 0) {
+              newPlayers[safeIndex].chips = 0;
+              newPlayers[safeIndex].isBankrupt = true;
+              console.log(
+                `💀 Player ${safeIndex} went bankrupt from mystery card`
+              );
+
+              setTimeout(() => {
+                releasePlayerCards(safeIndex);
+                checkForWinner(); // ADD THIS
+              }, 100);
+            }
           }
           return newPlayers;
         });
@@ -734,6 +830,7 @@ function LocalGame() {
       }
 
       // Handle collect/pay each player (ce)
+      // Handle collect/pay each player (ce)
       if (effects.ce !== undefined && effects.ce !== 0) {
         console.log(`🤝 Applying collect/pay effect: ${effects.ce}`);
         setPlayers((prev) => {
@@ -746,6 +843,16 @@ function LocalGame() {
                 const payment = Math.min(effects.ce!, newPlayers[i].chips);
                 newPlayers[i].chips -= payment;
                 newPlayers[safeIndex].chips += payment;
+
+                // Check if payer went bankrupt
+                if (newPlayers[i].chips <= 0) {
+                  newPlayers[i].chips = 0;
+                  newPlayers[i].isBankrupt = true;
+                  console.log(
+                    `💀 Player ${i} went bankrupt from mystery card payment`
+                  );
+                  setTimeout(() => releasePlayerCards(i), 100);
+                }
               }
             }
           } else {
@@ -761,6 +868,21 @@ function LocalGame() {
             );
 
             newPlayers[safeIndex].chips -= actualPayment;
+
+            // Check if payer went bankrupt
+            if (newPlayers[safeIndex].chips <= 0) {
+              newPlayers[safeIndex].chips = 0;
+              newPlayers[safeIndex].isBankrupt = true;
+              console.log(
+                `💀 Player ${safeIndex} went bankrupt from mystery card`
+              );
+
+              setTimeout(() => {
+                releasePlayerCards(safeIndex);
+                checkForWinner(); // ADD THIS
+              }, 100);
+            }
+
             for (let i = 0; i < newPlayers.length; i++) {
               if (i !== safeIndex) {
                 newPlayers[i].chips += perPlayer;
@@ -1145,12 +1267,30 @@ function LocalGame() {
         ...newPlayers[currentPlayerIndex].boughtCards,
         { ...landedCard, position: finalPosition },
       ];
+      const newChips = newPlayers[currentPlayerIndex].chips - cardPrice;
+
       newPlayers[currentPlayerIndex] = {
         ...newPlayers[currentPlayerIndex],
         collectedCards: updatedCards,
         boughtCards: updatedBoughtCards,
-        chips: newPlayers[currentPlayerIndex].chips - cardPrice,
+        chips: newChips,
       };
+
+      // Check if player is now bankrupt
+      // Check if player is now bankrupt
+      if (newChips <= 0) {
+        newPlayers[currentPlayerIndex].chips = 0;
+        newPlayers[currentPlayerIndex].isBankrupt = true;
+        console.log("handleBuyCard: Player bankrupt after purchase", {
+          playerIndex: currentPlayerIndex,
+        });
+
+        setTimeout(() => {
+          releasePlayerCards(currentPlayerIndex);
+          checkForWinner(); // ADD THIS
+        }, 100);
+      }
+
       console.log("handleBuyCard: Updated player state", {
         playerIndex: currentPlayerIndex,
         collectedCards: updatedCards,
@@ -1249,13 +1389,33 @@ function LocalGame() {
 
     setPlayers((prev) => {
       const newPlayers = [...prev];
-      newPlayers[currentPlayerIndex].chips -= penaltyInfo.penalty;
-      newPlayers[penaltyInfo.ownerIndex].chips += penaltyInfo.penalty;
+      const payer = newPlayers[currentPlayerIndex];
+      const owner = newPlayers[penaltyInfo.ownerIndex];
+
+      // Deduct penalty from payer
+      payer.chips -= penaltyInfo.penalty;
+      owner.chips += penaltyInfo.penalty;
+
+      // Check if payer is now bankrupt
+      // Check if payer is now bankrupt
+      if (payer.chips <= 0) {
+        payer.chips = 0;
+        payer.isBankrupt = true;
+        console.log("handlePayPenalty: Player bankrupt", {
+          playerIndex: currentPlayerIndex,
+          playerName: payer.name,
+        });
+
+        setTimeout(() => {
+          releasePlayerCards(currentPlayerIndex);
+          checkForWinner(); // ADD THIS
+        }, 100);
+      }
       console.log("handlePayPenalty: Updated chips", {
         payerIndex: currentPlayerIndex,
-        payerChips: newPlayers[currentPlayerIndex].chips,
+        payerChips: payer.chips,
         ownerIndex: penaltyInfo.ownerIndex,
-        ownerChips: newPlayers[penaltyInfo.ownerIndex].chips,
+        ownerChips: owner.chips,
         penalty: penaltyInfo.penalty,
       });
       return newPlayers;
@@ -1373,10 +1533,12 @@ function LocalGame() {
     setMysteryCardPositions({});
     setLandedMysteryCard(null);
     setShowMysteryCardModal(false);
+    setWinner(null); // ADD THIS
+    setShowWinnerModal(false); // ADD THIS
     setPlayers([
       {
         name: "Player 1",
-        chips: 10000,
+        chips: 5000,
         color: "000000",
         position: "bottom",
         collectedCards: [],
@@ -1389,7 +1551,7 @@ function LocalGame() {
       },
       {
         name: "Player 2",
-        chips: 10000,
+        chips: 5000,
         color: "DC143C",
         position: "left",
         collectedCards: [],
@@ -1402,7 +1564,7 @@ function LocalGame() {
       },
       {
         name: "Player 3",
-        chips: 10000,
+        chips: 5000,
         color: "90EE90",
         position: "top",
         collectedCards: [],
@@ -1415,7 +1577,7 @@ function LocalGame() {
       },
       {
         name: "Player 4",
-        chips: 10000,
+        chips: 5000,
         color: "ADD8E6",
         position: "right",
         collectedCards: [],
@@ -2071,6 +2233,8 @@ function LocalGame() {
                   left: "50%",
                   top: "50%",
                   transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px) rotateZ(${pos.rotateZ}deg) rotateX(-40deg) translateZ(23px) scale(0.8)`,
+                  opacity: player.isBankrupt ? 0.4 : 1, // Grey out bankrupt players
+                  filter: player.isBankrupt ? "grayscale(100%)" : "none", // Make them grayscale
                 }}
               >
                 <div
@@ -2084,6 +2248,20 @@ function LocalGame() {
                         : undefined,
                   }}
                 >
+                  {/* Bankrupt Overlay */}
+                  {player.isBankrupt && (
+                    <div className="absolute inset-0 bg-red-900/10 backdrop-blur-sm rounded-xl flex items-center justify-center z-50 border-4 border-red-500">
+                      <div className="text-center">
+                        <div className="text-white font-bold text-4xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] tracking-wider">
+                          BUSTED
+                        </div>
+                        <div className="text-red-300 text-sm mt-2 font-semibold">
+                          $0 Remaining
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {currentPlayerIndex === index && (
                     <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
                       CURRENT TURN
@@ -2586,6 +2764,9 @@ function LocalGame() {
                     </div>
                   )}
                 </div>
+
+                {/* Winner Modal */}
+
                 {/* <button
                   onClick={() => {
                     console.log(
@@ -2599,6 +2780,243 @@ function LocalGame() {
                   Continue
                 </button> */}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWinnerModal && winner !== null && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div
+            className="relative max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              background: `
+          radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.3) 0%, transparent 50%),
+          radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.3) 0%, transparent 50%),
+          linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)
+        `,
+              border: "4px solid rgba(251, 191, 36, 0.5)",
+              borderRadius: "20px",
+              boxShadow:
+                "0 0 60px rgba(251, 191, 36, 0.4), inset 0 0 40px rgba(99, 102, 241, 0.1)",
+            }}
+          >
+            {/* Animated background effects */}
+            <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none opacity-30">
+              <div
+                className="absolute top-0 left-0 w-24 h-24 bg-cyan-400 rounded-full blur-3xl"
+                style={{ animation: "float 8s ease-in-out infinite" }}
+              />
+              <div
+                className="absolute bottom-0 right-0 w-32 h-32 bg-purple-500 rounded-full blur-3xl"
+                style={{ animation: "float 10s ease-in-out infinite reverse" }}
+              />
+            </div>
+
+            <div className="relative z-10 p-6 md:p-8">
+              {/* Trophy and Title */}
+              <div className="text-center mb-6">
+                <div
+                  className="text-6xl md:text-7xl mb-3 inline-block"
+                  style={{
+                    animation: "bounce 2s ease-in-out infinite",
+                    filter: "drop-shadow(0 0 20px rgba(251, 191, 36, 0.8))",
+                  }}
+                >
+                  🏆
+                </div>
+                <h1
+                  className="text-4xl md:text-5xl font-bold mb-2"
+                  style={{
+                    background:
+                      "linear-gradient(to right, #fbbf24, #f59e0b, #fbbf24)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    textShadow: "0 0 30px rgba(251, 191, 36, 0.5)",
+                  }}
+                >
+                  VICTORY!
+                </h1>
+                <div className="h-1 w-24 mx-auto bg-gradient-to-r from-transparent via-yellow-400 to-transparent" />
+              </div>
+
+              {/* Winner Card */}
+              <div
+                className="rounded-xl p-4 md:p-5 mb-5 backdrop-blur-sm"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.8) 100%)",
+                  border: "2px solid rgba(251, 191, 36, 0.3)",
+                  boxShadow: "inset 0 0 30px rgba(99, 102, 241, 0.1)",
+                }}
+              >
+                {/* Winner Name and Suit */}
+                <div className="flex items-center justify-center gap-3 mb-5">
+                  <div
+                    className="w-16 h-16 md:w-18 md:h-18 rounded-xl flex items-center justify-center text-4xl md:text-5xl flex-shrink-0"
+                    style={{
+                      background: players[winner].color,
+                      border: "3px solid rgba(251, 191, 36, 0.5)",
+                      boxShadow: "0 0 20px rgba(251, 191, 36, 0.3)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color:
+                          players[winner].suit === "♠"
+                            ? "white"
+                            : getSuitColor(players[winner].suit),
+                        filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))",
+                      }}
+                    >
+                      {players[winner].suit}
+                    </span>
+                  </div>
+                  <div className="text-left">
+                    <h2 className="text-2xl md:text-3xl font-bold text-white drop-shadow-lg">
+                      {players[winner].name}
+                    </h2>
+                    <div className="text-xs md:text-sm text-yellow-400/80 font-semibold mt-1">
+                      Champion
+                    </div>
+                  </div>
+                </div>
+
+                {/* Winner Stats */}
+                <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4">
+                  <div className="text-center p-2 md:p-3 rounded-lg bg-black/30 border border-yellow-400/20">
+                    <div className="text-xl md:text-2xl font-bold text-yellow-400">
+                      $
+                      {players[winner].chips >= 1000
+                        ? `${(players[winner].chips / 1000).toFixed(1)}k`
+                        : players[winner].chips}
+                    </div>
+                    <div className="text-[10px] md:text-xs text-white/60 mt-1">
+                      Final Chips
+                    </div>
+                  </div>
+
+                  <div className="text-center p-2 md:p-3 rounded-lg bg-black/30 border border-blue-400/20">
+                    <div className="text-xl md:text-2xl font-bold text-blue-400">
+                      {players[winner].boughtCards.length}
+                    </div>
+                    <div className="text-[10px] md:text-xs text-white/60 mt-1">
+                      Cards Owned
+                    </div>
+                  </div>
+
+                  <div className="text-center p-2 md:p-3 rounded-lg bg-black/30 border border-purple-400/20">
+                    <div className="text-xl md:text-2xl font-bold text-purple-400">
+                      {players[winner].wilds || 0}
+                    </div>
+                    <div className="text-[10px] md:text-xs text-white/60 mt-1">
+                      Wild Cards
+                    </div>
+                  </div>
+                </div>
+
+                {/* Best Hand */}
+                {detectPokerHand(
+                  players[winner].collectedCards,
+                  players[winner].wilds || 0
+                ) && (
+                  <div className="p-3 rounded-lg bg-gradient-to-r from-green-900/40 to-emerald-900/40 border border-green-400/30">
+                    <div className="text-xs text-white/70 mb-1">Best Hand</div>
+                    <div className="text-base md:text-lg font-bold text-green-400">
+                      {getHandDescription(
+                        detectPokerHand(
+                          players[winner].collectedCards,
+                          players[winner].wilds || 0
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Defeated Players */}
+              <div
+                className="rounded-xl p-3 md:p-4 mb-5 backdrop-blur-sm"
+                style={{
+                  background: "rgba(15, 23, 42, 0.6)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                }}
+              >
+                <h3 className="text-base md:text-lg font-bold text-white/80 mb-3 text-center">
+                  Defeated Players
+                </h3>
+                <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  {players.map((player, idx) => {
+                    if (idx !== winner && player.isBankrupt) {
+                      return (
+                        <div
+                          key={idx}
+                          className="rounded-lg p-2 md:p-3 text-center backdrop-blur-sm"
+                          style={{
+                            background: "rgba(0, 0, 0, 0.3)",
+                            border: "2px solid rgba(239, 68, 68, 0.3)",
+                          }}
+                        >
+                          <div
+                            className="text-2xl md:text-3xl mb-1"
+                            style={{
+                              color:
+                                player.suit === "♠"
+                                  ? "white"
+                                  : getSuitColor(player.suit),
+                              opacity: 0.5,
+                            }}
+                          >
+                            {player.suit}
+                          </div>
+                          <div className="text-xs md:text-sm text-white/50 font-semibold truncate">
+                            {player.name}
+                          </div>
+                          <div className="text-[10px] md:text-xs text-red-400/70 mt-1 font-bold">
+                            BUSTED
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              </div>
+
+              {/* Play Again Button */}
+              <div className="text-center">
+                <button
+                  onClick={() => {
+                    console.log("Button: Play Again clicked");
+                    handleReset();
+                    setShowWinnerModal(false);
+                    setWinner(null);
+                  }}
+                  className="bg-gradient-to-r from-yellow-500 via-yellow-600 to-orange-500 hover:from-yellow-600 hover:via-yellow-700 hover:to-orange-600 text-black font-bold py-3 px-8 md:py-4 md:px-12 rounded-xl shadow-2xl transition-all hover:scale-105 text-lg md:text-xl border-4 border-yellow-400/50"
+                  style={{
+                    boxShadow:
+                      "0 0 30px rgba(251, 191, 36, 0.5), inset 0 2px 10px rgba(255, 255, 255, 0.2)",
+                  }}
+                >
+                  🎮 Play Again
+                </button>
+              </div>
+            </div>
+
+            {/* Confetti effect overlay */}
+            <div className="absolute inset-0 pointer-events-none">
+              {[...Array(20)].map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute w-3 h-3 bg-white rounded-full opacity-70"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    animation: `float ${3 + Math.random() * 3}s ease-in-out infinite`,
+                    animationDelay: `${Math.random() * 2}s`,
+                  }}
+                />
+              ))}
             </div>
           </div>
         </div>
