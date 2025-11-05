@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Bell, Users, X } from 'lucide-react';
-import { useTradeSystem } from './useTradeSystem';
-import { TradeOfferModal } from './TradeOfferModal';
-import { TradeNotificationModal } from './TradeNotificationModal';
-import type { Player, Card, TradeSystemConfig } from './TradeTypes';
+import React, { useState, useEffect } from "react";
+import { Bell, Users, X } from "lucide-react";
+import { useTradeSystem } from "./useTradeSystem";
+import { TradeOfferModal } from "./TradeOfferModal";
+import { TradeNotificationModal } from "./TradeNotificationModal";
+import type { Player, Card, TradeSystemConfig } from "./TradeTypes";
 
 interface TradeManagerProps {
   currentPlayer: Player;
@@ -80,7 +80,7 @@ export function TradeManager({
   };
 
   const handleAcceptTrade = async (tradeId: string): Promise<boolean> => {
-    const trade = incomingTrades.find(t => t.id === tradeId);
+    const trade = incomingTrades.find((t) => t.id === tradeId);
     if (!trade) return false;
 
     const success = await acceptTrade(tradeId);
@@ -106,7 +106,10 @@ export function TradeManager({
     return success;
   };
 
-  const handleRejectTrade = async (tradeId: string, fromPlayerId: string): Promise<boolean> => {
+  const handleRejectTrade = async (
+    tradeId: string,
+    fromPlayerId: string
+  ): Promise<boolean> => {
     const success = await rejectTrade(tradeId, fromPlayerId);
 
     if (success) {
@@ -136,7 +139,7 @@ export function TradeManager({
     }
   };
 
-  const otherPlayers = allPlayers.filter(p => p.id !== currentPlayer.id);
+  const otherPlayers = allPlayers.filter((p) => p.id !== currentPlayer.id);
   const currentTrade = incomingTrades[currentNotification];
 
   return (
@@ -176,7 +179,9 @@ export function TradeManager({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-xl font-bold text-gray-900">Select Player to Trade With</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                Select Player to Trade With
+              </h3>
               <button
                 onClick={() => setShowPlayerSelect(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -185,7 +190,7 @@ export function TradeManager({
               </button>
             </div>
             <div className="p-6 space-y-3">
-              {otherPlayers.map(player => (
+              {otherPlayers.map((player) => (
                 <button
                   key={player.id}
                   onClick={() => handlePlayerSelect(player)}
@@ -204,7 +209,9 @@ export function TradeManager({
                 </button>
               ))}
               {otherPlayers.length === 0 && (
-                <p className="text-center text-gray-500 py-8">No other players available</p>
+                <p className="text-center text-gray-500 py-8">
+                  No other players available
+                </p>
               )}
             </div>
           </div>
@@ -260,12 +267,19 @@ export function TradeManager({
 
       {outgoingTrades.length > 0 && (
         <div className="fixed bottom-4 right-4 z-40 bg-white rounded-lg shadow-lg p-4 max-w-sm">
-          <h4 className="font-semibold text-gray-900 mb-2">Pending Offers ({outgoingTrades.length})</h4>
+          <h4 className="font-semibold text-gray-900 mb-2">
+            Pending Offers ({outgoingTrades.length})
+          </h4>
           <div className="space-y-2 max-h-48 overflow-y-auto">
-            {outgoingTrades.map(trade => (
-              <div key={trade.id} className="bg-gray-50 rounded p-2 flex items-center justify-between">
+            {outgoingTrades.map((trade) => (
+              <div
+                key={trade.id}
+                className="bg-gray-50 rounded p-2 flex items-center justify-between"
+              >
                 <div className="text-sm">
-                  <p className="font-medium text-gray-900">To: {trade.to_player_name}</p>
+                  <p className="font-medium text-gray-900">
+                    To: {trade.to_player_name}
+                  </p>
                   <p className="text-gray-600 text-xs">
                     {trade.offer_cards.length} cards + ${trade.offer_money}
                   </p>

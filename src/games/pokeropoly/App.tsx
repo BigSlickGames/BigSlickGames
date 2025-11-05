@@ -53,6 +53,7 @@ interface Player {
   isEliminated?: boolean;
   lastBoardPosition?: number;
   lapsCompleted?: number;
+  isBankrupt?: boolean; // ADD THIS
 }
 
 function App() {
@@ -195,8 +196,13 @@ function App() {
   // 🏆 CHECK GAME OVER
   const checkGameOver = useCallback(async () => {
     const activePlayers = playersRef.current.filter(
-      (p) => !p.isEliminated && p.chips > 0
+      (p) => !p.isEliminated && !p.isBankrupt && p.chips > 0
     );
+
+    log("🏆", "Checking game over", {
+      totalPlayers: playersRef.current.length,
+      activePlayers: activePlayers.length,
+    });
 
     if (activePlayers.length === 1) {
       const winnerPlayer = activePlayers[0];
@@ -221,7 +227,6 @@ function App() {
 
       if (winnerRoomPlayer && supabase) {
         try {
-          // Get current balance from user_wallet
           const { data: wallet } = await supabase
             .from("user_wallet")
             .select("chips")
@@ -231,7 +236,6 @@ function App() {
           const currentBalance = wallet?.chips || 0;
           const newBalance = currentBalance + poolAmount;
 
-          // Update winner's chips in user_wallet
           const { error } = await supabase
             .from("user_wallet")
             .update({ chips: newBalance })
@@ -331,11 +335,23 @@ function App() {
         if (effects.cb) {
           const oldChips = player.chips;
           player.chips = Math.max(0, player.chips + effects.cb);
-          chipGain = player.chips - oldChips; // Calculate actual gain
+          chipGain = player.chips - oldChips;
 
-          if (player.chips === 0) {
+          // ✅ CHECK FOR BANKRUPTCY
+          if (player.chips <= 0) {
+            player.chips = 0;
+            player.isBankrupt = true;
             player.isEliminated = true;
+
+            log("💀", `Player ${playerIndex} went bankrupt from mystery card`);
+
+            // Release their cards
+            setTimeout(() => {
+              releasePlayerCards(playerIndex);
+              checkGameOver();
+            }, 100);
           }
+          chipGain += player.chips - oldPlayerChips;
 
           log("💰", `Mystery card chip change: ${chipGain}`);
         }
@@ -373,6 +389,17 @@ function App() {
                 const collectAmount = Math.min(Math.abs(amount), p.chips);
                 p.chips = Math.max(0, p.chips - collectAmount);
                 player.chips += collectAmount;
+
+                if (p.chips <= 0) {
+                  p.chips = 0;
+                  p.isBankrupt = true;
+                  p.isEliminated = true;
+                  log(
+                    "💀",
+                    `Player ${idx} went bankrupt from paying mystery card`
+                  );
+                  setTimeout(() => releasePlayerCards(idx), 100);
+                }
               } else {
                 // Pay to other players
                 const payAmount = Math.min(Math.abs(amount), player.chips);
@@ -683,6 +710,41 @@ function App() {
     }
   };
 
+  const releasePlayerCards = useCallback(
+    (playerIndex: number) => {
+      log("🔓", "Releasing cards for bankrupt player", { playerIndex });
+
+      setPlayers((prev) => {
+        const newPlayers = [...prev];
+        const player = newPlayers[playerIndex];
+
+        if (!player) return prev;
+
+        // Clear the player's cards
+        player.collectedCards = [];
+        player.boughtCards = [];
+
+        playersRef.current = newPlayers;
+        return newPlayers;
+      });
+
+      // Remove ownership from all cards owned by this player
+      setCardOwners((prev) => {
+        const newOwners = { ...prev };
+
+        Object.keys(newOwners).forEach((positionStr) => {
+          const position = parseInt(positionStr);
+          if (newOwners[position] === playerIndex) {
+            delete newOwners[position];
+            log("🔓", "Released card at position", { position });
+          }
+        });
+
+        return newOwners;
+      });
+    },
+    [log]
+  );
   const hasDeductedChips = useRef(false);
 
   useEffect(() => {
@@ -761,6 +823,19 @@ function App() {
           isEliminated: newChips <= 0,
         };
 
+        if (newChips <= 0) {
+          updated[safeIndex].chips = 0;
+          updated[safeIndex].isBankrupt = true;
+          updated[safeIndex].isEliminated = true;
+
+          log("💀", `Player ${safeIndex} went bankrupt after buying card`);
+
+          setTimeout(() => {
+            releasePlayerCards(safeIndex);
+            checkGameOver();
+          }, 100);
+        }
+
         playersRef.current = updated;
         return updated;
       });
@@ -782,23 +857,33 @@ function App() {
 
         const updated = [...prev];
         const payerChips = updated[safePayer].chips;
-
-        // Only pay what the payer has available
         const actualPayment = Math.min(amount, payerChips);
 
         updated[safePayer].chips = payerChips - actualPayment;
-        updated[safePayer].isEliminated = updated[safePayer].chips <= 0;
         updated[safeReceiver].chips += actualPayment;
+
+        // ✅ CHECK FOR BANKRUPTCY
+        if (updated[safePayer].chips <= 0) {
+          updated[safePayer].chips = 0;
+          updated[safePayer].isBankrupt = true;
+          updated[safePayer].isEliminated = true;
+
+          log("💀", `Player ${safePayer} went bankrupt after paying penalty`);
+
+          setTimeout(() => {
+            releasePlayerCards(safePayer);
+            checkGameOver();
+          }, 100);
+        }
 
         log("💸", `Penalty paid: ${actualPayment} (owed: ${amount})`);
 
         playersRef.current = updated;
-        setTimeout(() => checkGameOver(), 500);
         return updated;
       });
       setPenaltyInfo(null);
     },
-    [getSafePlayerIndex, log, checkGameOver]
+    [getSafePlayerIndex, log, checkGameOver, releasePlayerCards]
   );
 
   const endTurn = useCallback(async () => {
@@ -3119,6 +3204,19 @@ function App() {
                           : undefined,
                     }}
                   >
+                    {player.isBankrupt && (
+                      <div className="absolute inset-0 bg-red-900/10 backdrop-blur-sm rounded-xl flex items-center justify-center z-50 border-4 border-red-500">
+                        <div className="text-center">
+                          <div className="text-white font-bold text-4xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] tracking-wider">
+                            BUSTED
+                          </div>
+                          <div className="text-red-300 text-sm mt-2 font-semibold">
+                            $0 Remaining
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {currentPlayerIndex === originalIndex && ( // ✅ Use original index
                       <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black font-bold text-xs px-3 py-1 rounded-full shadow-lg animate-pulse">
                         CURRENT TURN
