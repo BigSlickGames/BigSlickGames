@@ -4,7 +4,8 @@ import { PlayerIcon } from "./components/PlayerIcon";
 import { PenaltyModal } from "./components/PenaltyModal";
 import { AuctionModal } from "./components/AuctionModalLocal";
 import { useRef } from "react";
-
+import { TradeManagerLocal } from "./trade-system/TradeManagerLocal";
+import type { Card as TradeCard } from "./trade-system/TradeTypes";
 import { SellCardsModal } from "./components/SellCardsModal";
 import { MiniSlotMachine } from "./components/MiniSlotMachine";
 import { RulesPanel } from "./components/RulesPanel";
@@ -28,6 +29,8 @@ import {
 } from "./data/mysteryCards";
 
 interface Player {
+  id: string; // ADD THIS LINE
+
   name: string;
   chips: number;
   color: string;
@@ -151,8 +154,10 @@ function LocalGame() {
 
   const [players, setPlayers] = useState<Player[]>([
     {
+      id: "player-0", // ADD THIS
+
       name: "Player 1",
-      chips: 100000,
+      chips: 5000,
       color: "#000000",
       position: "bottom",
       collectedCards: [],
@@ -163,8 +168,10 @@ function LocalGame() {
       isBankrupt: false,
     },
     {
+      id: "player-1", // ADD THIS
+
       name: "Player 2",
-      chips: 0,
+      chips: 5000,
       color: "#DC143C",
       position: "left",
       collectedCards: [],
@@ -175,8 +182,10 @@ function LocalGame() {
       isBankrupt: false,
     },
     {
+      id: "player-2", // ADD THIS
+
       name: "Player 3",
-      chips: 0,
+      chips: 5000,
       color: "#90EE90",
       position: "top",
       collectedCards: [],
@@ -187,8 +196,10 @@ function LocalGame() {
       isBankrupt: false,
     },
     {
+      id: "player-3", // ADD THIS
+
       name: "Player 4",
-      chips: 0,
+      chips: 5000,
       color: "#ADD8E6",
       position: "right",
       collectedCards: [],
@@ -1537,6 +1548,8 @@ function LocalGame() {
     setShowWinnerModal(false); // ADD THIS
     setPlayers([
       {
+        id: "player-0", // ADD THIS
+
         name: "Player 1",
         chips: 5000,
         color: "000000",
@@ -1550,6 +1563,8 @@ function LocalGame() {
         wildCollectedAt: [],
       },
       {
+        id: "player-1", // ADD THIS
+
         name: "Player 2",
         chips: 5000,
         color: "DC143C",
@@ -1563,6 +1578,8 @@ function LocalGame() {
         wildCollectedAt: [],
       },
       {
+        id: "player-2", // ADD THIS
+
         name: "Player 3",
         chips: 5000,
         color: "90EE90",
@@ -1576,6 +1593,8 @@ function LocalGame() {
         wildCollectedAt: [],
       },
       {
+        id: "player-3", // ADD THIS
+
         name: "Player 4",
         chips: 5000,
         color: "ADD8E6",
@@ -1717,6 +1736,102 @@ function LocalGame() {
       <div className="text-white text-center p-8">Waiting for players...</div>
     );
   }
+
+  const convertPlayerForTrade = (player: Player) => ({
+    id: player.id || `player-${players.indexOf(player)}`,
+    name: player.name,
+    chips: player.chips,
+    color: player.color,
+    cards: player.boughtCards.map((card) => ({
+      suit: card.suit,
+      value: card.value,
+      position: card.position,
+    })),
+  });
+
+  const handleTradeComplete = useCallback(
+    (
+      fromPlayerId: string,
+      toPlayerId: string,
+      fromCards: TradeCard[],
+      fromMoney: number,
+      toCards: TradeCard[],
+      toMoney: number
+    ) => {
+      setPlayers((prevPlayers) => {
+        const newPlayers = [...prevPlayers];
+        const fromPlayerIndex = newPlayers.findIndex(
+          (p) => (p.id || `player-${newPlayers.indexOf(p)}`) === fromPlayerId
+        );
+        const toPlayerIndex = newPlayers.findIndex(
+          (p) => (p.id || `player-${newPlayers.indexOf(p)}`) === toPlayerId
+        );
+
+        if (fromPlayerIndex === -1 || toPlayerIndex === -1) return prevPlayers;
+
+        // Update fromPlayer
+        newPlayers[fromPlayerIndex] = {
+          ...newPlayers[fromPlayerIndex],
+          chips: newPlayers[fromPlayerIndex].chips + toMoney - fromMoney,
+          boughtCards: [
+            ...newPlayers[fromPlayerIndex].boughtCards.filter(
+              (c) =>
+                !fromCards.some(
+                  (fc) => fc.suit === c.suit && fc.value === c.value
+                )
+            ),
+            ...toCards.map((c) => ({
+              suit: c.suit,
+              value: c.value,
+              position: c.position || 0,
+            })),
+          ],
+          collectedCards: [
+            ...newPlayers[fromPlayerIndex].collectedCards.filter(
+              (c) =>
+                c &&
+                !fromCards.some(
+                  (fc) => fc.suit === c.suit && fc.value === c.value
+                )
+            ),
+            ...toCards.map((c) => ({ suit: c.suit, value: c.value })),
+          ],
+        };
+
+        // Update toPlayer
+        newPlayers[toPlayerIndex] = {
+          ...newPlayers[toPlayerIndex],
+          chips: newPlayers[toPlayerIndex].chips + fromMoney - toMoney,
+          boughtCards: [
+            ...newPlayers[toPlayerIndex].boughtCards.filter(
+              (c) =>
+                !toCards.some(
+                  (tc) => tc.suit === c.suit && tc.value === c.value
+                )
+            ),
+            ...fromCards.map((c) => ({
+              suit: c.suit,
+              value: c.value,
+              position: c.position || 0,
+            })),
+          ],
+          collectedCards: [
+            ...newPlayers[toPlayerIndex].collectedCards.filter(
+              (c) =>
+                c &&
+                !toCards.some(
+                  (tc) => tc.suit === c.suit && tc.value === c.value
+                )
+            ),
+            ...fromCards.map((c) => ({ suit: c.suit, value: c.value })),
+          ],
+        };
+
+        return newPlayers;
+      });
+    },
+    []
+  );
   return (
     <div
       className="w-screen h-screen flex items-center justify-center overflow-hidden"
@@ -3020,6 +3135,16 @@ function LocalGame() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Trade System */}
+      {/* Trade System */}
+      {gameStarted && currentPlayerIndex >= 0 && !showWinnerModal && (
+        <TradeManagerLocal
+          currentPlayer={convertPlayerForTrade(players[currentPlayerIndex])}
+          allPlayers={players.map(convertPlayerForTrade)}
+          onTradeComplete={handleTradeComplete}
+        />
       )}
     </div>
   );

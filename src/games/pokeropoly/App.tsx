@@ -12,6 +12,9 @@ import WaitingRoom from "./components/WaitingRoom";
 import { useNavigate } from "react-router-dom";
 import LocalGame from "./LocalGame"; // Adjust path as needed
 
+import { TradeManager } from "./trade-system/TradeManager";
+import type { Card as TradeCard } from "./trade-system/TradeTypes";
+
 import {
   MYSTERY_CARDS,
   BOMB_CARDS,
@@ -34,6 +37,8 @@ import {
 import { RoomService, Room, RoomPlayer } from "./services/roomService";
 
 interface Player {
+  id: string; // ADD THIS LINE
+
   name: string;
   chips: number;
   color: string;
@@ -491,6 +496,8 @@ function App() {
       initializeMysteryCards();
 
       const gamePlayers: Player[] = freshPlayers.map((rp, idx) => ({
+        id: rp.user_id || `player-${idx}`, // ADD THIS LINE
+
         name: rp.player_name || "Unknown",
         chips: 15000, // Everyone starts with 15,000 chips in game
         color: ["#000000", "#DC143C", "#90EE90", "#ADD8E6"][idx] || "#CCCCCC",
@@ -523,6 +530,121 @@ function App() {
       log("✅", "INITIALIZATION COMPLETE");
     },
     [log, initializeMysteryCards]
+  );
+
+  const convertPlayerForTrade = (player: Player) => ({
+    id: player.id,
+    name: player.name,
+    chips: player.chips,
+    color: player.color,
+    cards: player.boughtCards.map((card) => ({
+      suit: card.suit,
+      value: card.value,
+      position: card.position,
+    })),
+  });
+
+  const handleTradeComplete = useCallback(
+    async (
+      fromPlayerId: string,
+      toPlayerId: string,
+      fromCards: TradeCard[],
+      fromMoney: number,
+      toCards: TradeCard[],
+      toMoney: number
+    ) => {
+      setPlayers((prevPlayers) => {
+        const newPlayers = [...prevPlayers];
+        const fromPlayerIndex = newPlayers.findIndex(
+          (p) => p.id === fromPlayerId
+        );
+        const toPlayerIndex = newPlayers.findIndex((p) => p.id === toPlayerId);
+
+        if (fromPlayerIndex === -1 || toPlayerIndex === -1) return prevPlayers;
+
+        // Update fromPlayer
+        newPlayers[fromPlayerIndex] = {
+          ...newPlayers[fromPlayerIndex],
+          chips: newPlayers[fromPlayerIndex].chips + toMoney - fromMoney,
+          boughtCards: [
+            ...newPlayers[fromPlayerIndex].boughtCards.filter(
+              (c) =>
+                !fromCards.some(
+                  (fc) => fc.suit === c.suit && fc.value === c.value
+                )
+            ),
+            ...toCards.map((c) => ({
+              suit: c.suit,
+              value: c.value,
+              position: c.position || 0,
+            })),
+          ],
+        };
+
+        // Update toPlayer
+        newPlayers[toPlayerIndex] = {
+          ...newPlayers[toPlayerIndex],
+          chips: newPlayers[toPlayerIndex].chips + fromMoney - toMoney,
+          boughtCards: [
+            ...newPlayers[toPlayerIndex].boughtCards.filter(
+              (c) =>
+                !toCards.some(
+                  (tc) => tc.suit === c.suit && tc.value === c.value
+                )
+            ),
+            ...fromCards.map((c) => ({
+              suit: c.suit,
+              value: c.value,
+              position: c.position || 0,
+            })),
+          ],
+        };
+
+        // Update refs
+        playersRef.current = newPlayers;
+        return newPlayers;
+      });
+
+      // Update collectedCards for both players
+      setPlayers((prev) => {
+        const updated = [...prev];
+        const fromIdx = updated.findIndex((p) => p.id === fromPlayerId);
+        const toIdx = updated.findIndex((p) => p.id === toPlayerId);
+
+        if (fromIdx !== -1) {
+          updated[fromIdx].collectedCards = updated[fromIdx].boughtCards.map(
+            (c) => ({ suit: c.suit, value: c.value })
+          );
+        }
+        if (toIdx !== -1) {
+          updated[toIdx].collectedCards = updated[toIdx].boughtCards.map(
+            (c) => ({ suit: c.suit, value: c.value })
+          );
+        }
+
+        playersRef.current = updated;
+        return updated;
+      });
+
+      // Broadcast trade to other players
+      if (currentRoom) {
+        await RoomService.broadcastAction(
+          currentRoom.id,
+          currentUserId,
+          currentIndexRef.current,
+          "trade",
+          {
+            fromPlayerId,
+            toPlayerId,
+            fromCards,
+            fromMoney,
+            toCards,
+            toMoney,
+          }
+        );
+      }
+    },
+    [currentRoom, currentUserId]
   );
 
   const deductChipsFromAccounts = async () => {
@@ -1199,6 +1321,97 @@ function App() {
 
           case "buyCard":
             applyBuyCard(action.action_data);
+            break;
+
+          case "trade":
+            const {
+              fromPlayerId,
+              toPlayerId,
+              fromCards,
+              fromMoney,
+              toCards,
+              toMoney,
+            } = action.action_data;
+
+            // Apply trade without broadcasting (already received via broadcast)
+            setPlayers((prevPlayers) => {
+              const newPlayers = [...prevPlayers];
+              const fromPlayerIndex = newPlayers.findIndex(
+                (p) => p.id === fromPlayerId
+              );
+              const toPlayerIndex = newPlayers.findIndex(
+                (p) => p.id === toPlayerId
+              );
+
+              if (fromPlayerIndex === -1 || toPlayerIndex === -1)
+                return prevPlayers;
+
+              // Update fromPlayer
+              newPlayers[fromPlayerIndex] = {
+                ...newPlayers[fromPlayerIndex],
+                chips: newPlayers[fromPlayerIndex].chips + toMoney - fromMoney,
+                boughtCards: [
+                  ...newPlayers[fromPlayerIndex].boughtCards.filter(
+                    (c) =>
+                      !fromCards.some(
+                        (fc) => fc.suit === c.suit && fc.value === c.value
+                      )
+                  ),
+                  ...toCards.map((c) => ({
+                    suit: c.suit,
+                    value: c.value,
+                    position: c.position || 0,
+                  })),
+                ],
+                collectedCards: [
+                  ...newPlayers[fromPlayerIndex].collectedCards.filter(
+                    (c) =>
+                      c &&
+                      !fromCards.some(
+                        (fc) => fc.suit === c.suit && fc.value === c.value
+                      )
+                  ),
+                  ...toCards.map((c) => ({ suit: c.suit, value: c.value })),
+                ],
+              };
+
+              // Update toPlayer
+              newPlayers[toPlayerIndex] = {
+                ...newPlayers[toPlayerIndex],
+                chips: newPlayers[toPlayerIndex].chips + fromMoney - toMoney,
+                boughtCards: [
+                  ...newPlayers[toPlayerIndex].boughtCards.filter(
+                    (c) =>
+                      !toCards.some(
+                        (tc) => tc.suit === c.suit && tc.value === c.value
+                      )
+                  ),
+                  ...fromCards.map((c) => ({
+                    suit: c.suit,
+                    value: c.value,
+                    position: c.position || 0,
+                  })),
+                ],
+                collectedCards: [
+                  ...newPlayers[toPlayerIndex].collectedCards.filter(
+                    (c) =>
+                      c &&
+                      !toCards.some(
+                        (tc) => tc.suit === c.suit && tc.value === c.value
+                      )
+                  ),
+                  ...fromCards.map((c) => ({ suit: c.suit, value: c.value })),
+                ],
+              };
+
+              playersRef.current = newPlayers;
+              return newPlayers;
+            });
+
+            log("🔄", "Trade processed from broadcast", {
+              fromPlayerId,
+              toPlayerId,
+            });
             break;
 
           case "endTurn":
@@ -3289,6 +3502,23 @@ function App() {
           </div>
         </div>
       )}
+
+      {gameStarted && currentPlayerIndex >= 0 && gameMode === "playing" && (
+        <>
+          {console.log("🔍 TradeManager should render", {
+            gameStarted,
+            currentPlayerIndex,
+            gameMode,
+            playersCount: players.length,
+          })}
+          <TradeManager
+            currentPlayer={convertPlayerForTrade(players[currentPlayerIndex])}
+            allPlayers={players.map(convertPlayerForTrade)}
+            onTradeComplete={handleTradeComplete}
+          />
+        </>
+      )}
+
       {/* VIDEO MODAL */}
       {showVideoModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
