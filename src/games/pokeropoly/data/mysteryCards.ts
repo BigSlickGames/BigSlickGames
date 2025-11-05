@@ -1228,12 +1228,12 @@ export const BOMB_CARDS: MysteryCard[] = [
 export const JOKER_CARD: MysteryCard = {
   id: "JOKER",
   deck: "Joker",
-  title: "Wild Card!",
-  text: "Joker collected! Acts as any card to complete poker hands for 1 full lap around the board.",
-  icon: "🃏",
-  name: "Wild Card!",
+  title: "WILD Card!", // Changed to all caps for consistency
+  text: "You collected a WILD card! Acts as any card to complete poker hands for 1 full lap around the board.",
+  icon: "", // Remove icon since we're using the image instead
+  name: "WILD Card!", // Changed to WILD
   description:
-    "Joker collected! Acts as any card to complete poker hands for 1 full lap around the board.",
+    "You collected a WILD card! Acts as any card to complete poker hands for 1 full lap around the board.",
   effects: {},
 };
 

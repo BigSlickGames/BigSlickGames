@@ -99,7 +99,7 @@ function LocalGame() {
   ]);
   const [isMoving, setIsMoving] = useState(false);
   const [hasPair, setHasPair] = useState(false);
-  const [invertScroll, setInvertScroll] = useState(false);
+  const [invertScroll, setInvertScroll] = useState(true);
   const [landedCard, setLandedCard] = useState<{
     suit: string;
     value: string;
@@ -157,7 +157,7 @@ function LocalGame() {
       id: "player-0", // ADD THIS
 
       name: "Player 1",
-      chips: 5000,
+      chips: 10000,
       color: "#000000",
       position: "bottom",
       collectedCards: [],
@@ -171,7 +171,7 @@ function LocalGame() {
       id: "player-1", // ADD THIS
 
       name: "Player 2",
-      chips: 5000,
+      chips: 10000,
       color: "#DC143C",
       position: "left",
       collectedCards: [],
@@ -185,7 +185,7 @@ function LocalGame() {
       id: "player-2", // ADD THIS
 
       name: "Player 3",
-      chips: 5000,
+      chips: 10000,
       color: "#90EE90",
       position: "top",
       collectedCards: [],
@@ -199,7 +199,7 @@ function LocalGame() {
       id: "player-3", // ADD THIS
 
       name: "Player 4",
-      chips: 5000,
+      chips: 10000,
       color: "#ADD8E6",
       position: "right",
       collectedCards: [],
@@ -1513,6 +1513,25 @@ function LocalGame() {
     console.log("handleSellCards: Closed sell modal");
   };
 
+  const getPlayerTiltAngle = (position: number): number => {
+    // Tilt tokens 60 degrees toward the outside of the board
+    const side = Math.floor(position / spacesPerSide);
+
+    if (position < spacesPerSide) {
+      // Bottom side - tilt away from center (positive X rotation)
+      return 60;
+    } else if (position < spacesPerSide * 2) {
+      // Left side - tilt toward left (rotate around Y axis but expressed as X for simplicity)
+      return -60;
+    } else if (position < spacesPerSide * 3) {
+      // Top side - tilt toward top (negative X rotation)
+      return -60;
+    } else {
+      // Right side - tilt toward right
+      return 60;
+    }
+  };
+
   const handleAutoPlay = () => {
     console.log("handleAutoPlay: Toggling auto-play", { isAutoPlaying });
     setIsAutoPlaying(!isAutoPlaying);
@@ -2131,15 +2150,24 @@ function LocalGame() {
                         style={{
                           top: "50%",
                           left: "50%",
-                          transform: "translate(-50%, -50%) translateZ(20px)",
-                          zIndex: 100, // ADD zIndex
+                          transform:
+                            "translate(-50%, -50%) scale(1.8) translateZ(25px)",
+                          zIndex: 150,
+                          filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.9))",
                         }}
                       >
                         {playersOnThisSpace.map((pIndex) => (
-                          <div key={pIndex}>
+                          <div
+                            key={pIndex}
+                            style={{
+                              transform: "translateZ(5px)",
+                            }}
+                          >
                             <PlayerIcon
                               color={players[pIndex].color}
                               suit={players[pIndex].suit}
+                              elevation={25}
+                              isLanded={true}
                             />
                           </div>
                         ))}
@@ -2634,98 +2662,118 @@ function LocalGame() {
         </div>
       </div>
       {/* Mystery Card Modal */}
-      {showMysteryCardModal && landedMysteryCard && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-8 rounded-2xl shadow-2xl border-4 border-yellow-400 max-w-md">
-            <div className="text-center">
-              <div className="text-6xl mb-4">
-                {landedMysteryCard.icon ||
-                  (landedMysteryCard.deck === "Joker"
-                    ? "🃏"
-                    : landedMysteryCard.deck === "Bomb"
-                      ? "💣"
-                      : "❓")}
+      {showMysteryCardModal && landedMysteryCard?.deck === "Joker" && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="max-w-4xl w-full bg-gradient-to-br from-gray-900 to-black rounded-2xl overflow-hidden shadow-2xl border-4 border-yellow-400 p-8">
+            <div className="flex gap-6 items-center">
+              {/* Image Side */}
+              <div className="flex-shrink-0 w-80">
+                <img
+                  src="/games/pokeropoly/images/wildcard.png"
+                  alt="Wild Card"
+                  className="w-full h-auto rounded-lg shadow-lg border-2 border-yellow-400"
+                  onError={(e) =>
+                    console.error("Wild card image failed to load", e)
+                  }
+                  onLoad={() => console.log("Wild card image loaded")}
+                />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2">
-                {landedMysteryCard.name ||
-                  landedMysteryCard.title ||
-                  "Unknown Card"}
-              </h2>
-              <p className="text-white/90 text-lg mb-6">
-                {landedMysteryCard.description ||
-                  landedMysteryCard.text ||
-                  "No description available"}
-              </p>
-              <div className="bg-white/10 rounded-xl p-4 border-2 border-white/20 mb-6">
-                {landedMysteryCard.effects.cb && (
-                  <div
-                    className={`text-xl font-semibold ${
-                      landedMysteryCard.effects.cb > 0
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }`}
-                  >
-                    {landedMysteryCard.effects.cb > 0 ? "+" : ""}
-                    {landedMysteryCard.effects.cb} Chips
-                  </div>
-                )}
-                {landedMysteryCard.effects.mb && (
-                  <div className="text-xl font-semibold text-blue-400">
-                    Move {landedMysteryCard.effects.mb > 0 ? "forward" : "back"}{" "}
-                    {Math.abs(landedMysteryCard.effects.mb)} spaces
-                  </div>
-                )}
-                {landedMysteryCard.effects.mt && (
-                  <div className="text-xl font-semibold text-blue-400">
-                    Move to {landedMysteryCard.effects.mt}
-                  </div>
-                )}
-                {landedMysteryCard.effects.dr && (
+
+              {/* Text Side */}
+              <div className="flex-1 text-center">
+                <div className="text-6xl mb-4">🃏</div>
+                <h2 className="text-3xl font-bold text-white mb-4">
+                  {landedMysteryCard?.name ||
+                    landedMysteryCard?.title ||
+                    "WILD Card"}
+                </h2>
+                <p className="text-white/90 text-lg mb-6">
+                  {landedMysteryCard?.description ||
+                    landedMysteryCard?.text ||
+                    "You collected a WILD card!"}
+                </p>
+
+                {/* Effects Display */}
+                <div className="bg-white/10 rounded-xl p-4 border-2 border-white/20 mb-6">
                   <div className="text-xl font-semibold text-yellow-400">
-                    Draw {landedMysteryCard.effects.dr} card
-                    {landedMysteryCard.effects.dr > 1 ? "s" : ""}
+                    Wild cards help you complete poker hands!
                   </div>
-                )}
-                {landedMysteryCard.effects.sk && (
-                  <div className="text-xl font-semibold text-red-400">
-                    Skip {landedMysteryCard.effects.sk} turn
-                    {landedMysteryCard.effects.sk > 1 ? "s" : ""}
-                  </div>
-                )}
-                {landedMysteryCard.effects.rt && (
-                  <div className="text-xl font-semibold text-green-400">
-                    Repeat your turn
-                  </div>
-                )}
-                {landedMysteryCard.effects.ce && (
-                  <div
-                    className={`text-xl font-semibold ${
-                      landedMysteryCard.effects.ce > 0
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }`}
-                  >
-                    {landedMysteryCard.effects.ce > 0 ? "Collect" : "Pay"}{" "}
-                    {Math.abs(landedMysteryCard.effects.ce)} from each player
-                  </div>
-                )}
+                </div>
+
+                <button
+                  onClick={() => {
+                    console.log("Button: Continue wild card");
+                    setShowMysteryCardModal(false);
+                    setLandedMysteryCard(null);
+                    if (hasExtraTurn) {
+                      setHasExtraTurn(false);
+                      setHasPair(false);
+                    } else {
+                      endTurn();
+                    }
+                  }}
+                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
+                >
+                  Continue
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  console.log(
-                    "Button: Continue mystery card effect",
-                    JSON.stringify({ landedMysteryCard }, null, 2)
-                  );
-                  handleMysteryCardEffect(landedMysteryCard);
-                }}
-                className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
-              >
-                Continue
-              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Other Mystery Cards Modal - Bomb/Lightning */}
+      {showMysteryCardModal &&
+        landedMysteryCard &&
+        landedMysteryCard.deck !== "Joker" && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-8 rounded-2xl shadow-2xl border-4 border-yellow-400 max-w-md">
+              <div className="text-center">
+                <div className="text-6xl mb-4">
+                  {landedMysteryCard.icon ||
+                    (landedMysteryCard.deck === "Bomb" ? "💣" : "⚡")}
+                </div>
+                <h2 className="text-3xl font-bold text-white mb-2">
+                  {landedMysteryCard.name ||
+                    landedMysteryCard.title ||
+                    "Unknown Card"}
+                </h2>
+                <p className="text-white/90 text-lg mb-6">
+                  {landedMysteryCard.description ||
+                    landedMysteryCard.text ||
+                    "No description available"}
+                </p>
+
+                {/* Effects Display */}
+                <div className="bg-white/10 rounded-xl p-4 border-2 border-white/20 mb-6">
+                  {landedMysteryCard.effects.cb && (
+                    <div
+                      className={`text-xl font-semibold ${landedMysteryCard.effects.cb > 0 ? "text-green-400" : "text-red-400"}`}
+                    >
+                      {landedMysteryCard.effects.cb > 0 ? "+" : ""}
+                      {landedMysteryCard.effects.cb} Chips
+                    </div>
+                  )}
+                  {/* Add other effects display as needed */}
+                </div>
+
+                <button
+                  onClick={() => {
+                    console.log(
+                      "Button: Continue mystery card effect",
+                      JSON.stringify(landedMysteryCard, null, 2)
+                    );
+                    handleMysteryCardEffect(landedMysteryCard);
+                  }}
+                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-bold py-3 px-8 rounded-lg shadow-xl transition-all hover:scale-105"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       {penaltyInfo && (
         <PenaltyModal
           card={penaltyInfo.card}
