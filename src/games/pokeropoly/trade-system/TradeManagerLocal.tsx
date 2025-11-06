@@ -3,7 +3,7 @@ import { Users, X, Check, XCircle, Bell } from "lucide-react";
 import { TradeOfferModal } from "./TradeOfferModal";
 import type { Player, Card } from "./TradeTypes";
 
-interface PendingTrade {
+export interface PendingTrade {
   id: string;
   fromPlayerId: string;
   fromPlayerName: string;
@@ -27,21 +27,34 @@ interface TradeManagerLocalProps {
     toCards: Card[],
     toMoney: number
   ) => void;
+  pendingTrades?: PendingTrade[];
+  onCreateTrade?: (trade: PendingTrade) => void;
+  onAcceptTrade?: (tradeId: string) => void;
+  onRejectTrade?: (tradeId: string) => void;
+  onCancelTrade?: (tradeId: string) => void;
 }
 
 export function TradeManagerLocal({
   currentPlayer,
   allPlayers,
   onTradeComplete,
+  pendingTrades: externalPendingTrades,
+  onCreateTrade,
+  onAcceptTrade: externalOnAcceptTrade,
+  onRejectTrade: externalOnRejectTrade,
+  onCancelTrade: externalOnCancelTrade,
 }: TradeManagerLocalProps) {
   const [showPlayerSelect, setShowPlayerSelect] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
-  const [pendingTrades, setPendingTrades] = useState<PendingTrade[]>([]);
+  const [localPendingTrades, setLocalPendingTrades] = useState<PendingTrade[]>([]);
   const [showTradeNotification, setShowTradeNotification] = useState(false);
   const [currentTradeView, setCurrentTradeView] = useState<PendingTrade | null>(
     null
   );
+
+  // Use external pending trades if provided, otherwise use local state
+  const pendingTrades = externalPendingTrades || localPendingTrades;
 
   const handlePlayerSelect = (player: Player) => {
     setSelectedPlayer(player);
@@ -58,7 +71,7 @@ export function TradeManagerLocal({
     if (!selectedPlayer) return;
 
     const newTrade: PendingTrade = {
-      id: `trade-${Date.now()}`,
+      id: `trade-${Date.now()}-${Math.random()}`,
       fromPlayerId: currentPlayer.id,
       fromPlayerName: currentPlayer.name,
       toPlayerId: selectedPlayer.id,
@@ -70,7 +83,12 @@ export function TradeManagerLocal({
       timestamp: Date.now(),
     };
 
-    setPendingTrades((prev) => [...prev, newTrade]);
+    if (onCreateTrade) {
+      onCreateTrade(newTrade);
+    } else {
+      setLocalPendingTrades((prev) => [...prev, newTrade]);
+    }
+
     setShowOfferModal(false);
     setSelectedPlayer(null);
   };
@@ -85,19 +103,33 @@ export function TradeManagerLocal({
       trade.requestMoney
     );
 
-    setPendingTrades((prev) => prev.filter((t) => t.id !== trade.id));
+    if (externalOnAcceptTrade) {
+      externalOnAcceptTrade(trade.id);
+    } else {
+      setLocalPendingTrades((prev) => prev.filter((t) => t.id !== trade.id));
+    }
+
     setShowTradeNotification(false);
     setCurrentTradeView(null);
   };
 
   const handleRejectTrade = (tradeId: string) => {
-    setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+    if (externalOnRejectTrade) {
+      externalOnRejectTrade(tradeId);
+    } else {
+      setLocalPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+    }
+
     setShowTradeNotification(false);
     setCurrentTradeView(null);
   };
 
   const handleCancelTrade = (tradeId: string) => {
-    setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+    if (externalOnCancelTrade) {
+      externalOnCancelTrade(tradeId);
+    } else {
+      setLocalPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+    }
   };
 
   const otherPlayers = allPlayers.filter((p) => p.id !== currentPlayer.id);

@@ -30,6 +30,7 @@ export function TradeManager({
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [currentNotification, setCurrentNotification] = useState<number>(0);
+  const [dismissedError, setDismissedError] = useState(false);
 
   const {
     incomingTrades,
@@ -50,6 +51,13 @@ export function TradeManager({
       setShowNotificationModal(true);
     }
   }, [incomingTrades.length]);
+
+  // Reset dismissed error when error changes
+  useEffect(() => {
+    if (error) {
+      setDismissedError(false);
+    }
+  }, [error]);
 
   const handlePlayerSelect = (player: Player) => {
     setSelectedPlayer(player);
@@ -139,8 +147,21 @@ export function TradeManager({
     }
   };
 
+  const handleDismissError = () => {
+    setDismissedError(true);
+  };
+
   const otherPlayers = allPlayers.filter((p) => p.id !== currentPlayer.id);
   const currentTrade = incomingTrades[currentNotification];
+
+  // ✅ FIX: Filter out "rejection tracking" errors or show them more gracefully
+  const shouldShowError =
+    error &&
+    !dismissedError &&
+    !error.toLowerCase().includes("rejection tracking");
+  const isRejectionTrackingError = error
+    ?.toLowerCase()
+    .includes("rejection tracking");
 
   return (
     <>
@@ -168,11 +189,13 @@ export function TradeManager({
           </button>
         )}
 
-        {rejectionTracking?.dice_penalty_active && (
-          <div className="bg-orange-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 font-medium">
-            <span>⚠️ Dice Penalty Active</span>
-          </div>
-        )}
+        {/* ✅ FIX: Only show penalty warning if rejection tracking loaded successfully */}
+        {rejectionTracking?.dice_penalty_active &&
+          !isRejectionTrackingError && (
+            <div className="bg-orange-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 font-medium">
+              <span>⚠️ Dice Penalty Active</span>
+            </div>
+          )}
       </div>
 
       {showPlayerSelect && (
@@ -296,10 +319,42 @@ export function TradeManager({
         </div>
       )}
 
-      {error && (
+      {/* ✅ FIX: Better error handling - ignore rejection tracking errors or show dismissible warning */}
+      {shouldShowError && (
         <div className="fixed top-20 right-4 z-40 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm">
-          <p className="font-medium">Trade Error</p>
-          <p className="text-sm">{error}</p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <p className="font-medium">Trade Error</p>
+              <p className="text-sm">{error}</p>
+            </div>
+            <button
+              onClick={handleDismissError}
+              className="text-white hover:text-gray-200 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ FIX: Show a subtle warning for rejection tracking errors instead of error */}
+      {isRejectionTrackingError && !dismissedError && (
+        <div className="fixed top-20 right-4 z-40 bg-yellow-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <p className="font-medium">⚠️ Notice</p>
+              <p className="text-sm">
+                Trade rejection tracking unavailable. Trading still works
+                normally.
+              </p>
+            </div>
+            <button
+              onClick={handleDismissError}
+              className="text-white hover:text-gray-200 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
       )}
     </>

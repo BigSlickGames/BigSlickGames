@@ -10,9 +10,12 @@ import { RulesPanel } from "./components/RulesPanel";
 import MultiplayerLobby from "./components/MultiplayerLobby";
 import WaitingRoom from "./components/WaitingRoom";
 import { useNavigate } from "react-router-dom";
-import LocalGame from "./LocalGame"; // Adjust path as needed
+import LocalGame from "./LocalGame";
 
-import { TradeManager } from "./trade-system/TradeManager";
+import {
+  TradeManagerLocal,
+  PendingTrade,
+} from "./trade-system/TradeManagerLocal";
 import type { Card as TradeCard } from "./trade-system/TradeTypes";
 
 import {
@@ -23,7 +26,6 @@ import {
   getRandomMysteryCard,
   QUESTION_MARK_POSITIONS,
   initializeJokerPositions,
-  isJokerPosition,
 } from "./data/mysteryCards";
 
 import {
@@ -37,8 +39,7 @@ import {
 import { RoomService, Room, RoomPlayer } from "./services/roomService";
 
 interface Player {
-  id: string; // ADD THIS LINE
-
+  id: string;
   name: string;
   chips: number;
   color: string;
@@ -53,7 +54,7 @@ interface Player {
   isEliminated?: boolean;
   lastBoardPosition?: number;
   lapsCompleted?: number;
-  isBankrupt?: boolean; // ADD THIS
+  isBankrupt?: boolean;
 }
 
 function App() {
@@ -73,6 +74,15 @@ function App() {
   const [currentUsername, setCurrentUsername] = useState<string>("Player");
   const [isHost, setIsHost] = useState(false);
   const [showLocalGame, setShowLocalGame] = useState(false);
+
+  // 🔥 WALLET & XP STATE
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
+  const [playerExperience, setPlayerExperience] = useState(0);
+
+  // 🔥 TRADE STATE
+  const [pendingTrades, setPendingTrades] = useState<PendingTrade[]>([]);
+
   // 🔥 AUDIO STATE
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
@@ -105,12 +115,226 @@ function App() {
     console.log(`[${timestamp}] ${emoji} ${message}`, data || "");
   }, []);
 
+  // Wallet & XP sync functions
+  const updateWalletInDB = useCallback(
+    async (newChips: number) => {
+      if (!currentUserId || !supabase) return;
+      try {
+        await supabase
+          .from("user_wallet")
+          .update({ chips: newChips, updated_at: new Date().toISOString() })
+          .eq("user_id", currentUserId);
+        setWalletBalance(newChips);
+        log("💰", `Updated wallet: ${newChips} chips`);
+      } catch (error) {
+        log("❌", "Error updating wallet", error);
+      }
+    },
+    [currentUserId, log]
+  );
+
+  const updateProgressInDB = useCallback(
+    async (newLevel: number, newExperience: number) => {
+      if (!currentUserId || !supabase) return;
+      try {
+        await supabase
+          .from("user_wallet")
+          .update({
+            level: newLevel,
+            experience: newExperience,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", currentUserId);
+        setPlayerLevel(newLevel);
+        setPlayerExperience(newExperience);
+        log("⭐", `Level: ${newLevel}, XP: ${newExperience}`);
+      } catch (error) {
+        log("❌", "Error updating progress", error);
+      }
+    },
+    [currentUserId, log]
+  );
+
+  const syncGameEndStats = useCallback(
+    async (finalChips: number, startingChips: number = 15000) => {
+      if (!currentUserId || !supabase) return;
+
+      try {
+        const profit = finalChips - startingChips;
+        const won = profit > 0;
+
+        // Update wallet with final chips
+        const { data: wallet } = await supabase
+          .from("user_wallet")
+          .select(
+            "chips, experience, level, games_played, games_won, games_won_by_type"
+          )
+          .eq("user_id", currentUserId)
+          .single();
+
+        if (!wallet) return;
+
+        const newWalletChips = wallet.chips + profit;
+        const newGamesPlayed = (wallet.games_played || 0) + 1;
+        const newGamesWon = won
+          ? (wallet.games_won || 0) + 1
+          : wallet.games_won;
+        const gamesWonByType = wallet.games_won_by_type || {};
+        if (won) {
+          gamesWonByType.pokeropoly = (gamesWonByType.pokeropoly || 0) + 1;
+        }
+
+        // Calculate XP and level up (only on win)
+        let newExperience = wallet.experience || 0;
+        let newLevel = wallet.level || 1;
+
+        if (won && profit > 0) {
+          let currentXP = newExperience + profit;
+          let currentLevel = newLevel;
+
+          // Check for level ups - XP requirement = currentLevel * 1000
+          while (currentXP >= currentLevel * 1000) {
+            currentXP -= currentLevel * 1000;
+            currentLevel++;
+
+            // Award 500 chips for level up
+            const levelUpChips = newWalletChips + 500;
+            await supabase
+              .from("user_wallet")
+              .update({ chips: levelUpChips })
+              .eq("user_id", currentUserId);
+
+            log("🎉", `LEVEL UP! Now level ${currentLevel}. +500 chips bonus!`);
+          }
+
+          newExperience = currentXP;
+          newLevel = currentLevel;
+        }
+
+        // Update all stats
+        await supabase
+          .from("user_wallet")
+          .update({
+            chips: newWalletChips,
+            experience: newExperience,
+            level: newLevel,
+            games_played: newGamesPlayed,
+            games_won: newGamesWon,
+            games_won_by_type: gamesWonByType,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", currentUserId);
+
+        setWalletBalance(newWalletChips);
+        setPlayerLevel(newLevel);
+        setPlayerExperience(newExperience);
+
+        log(
+          "🎮",
+          `Game End: Profit=${profit}, New Balance=${newWalletChips}, XP=${newExperience}, Level=${newLevel}`
+        );
+      } catch (error) {
+        log("❌", "Error syncing game end stats", error);
+      }
+    },
+    [currentUserId, log]
+  );
+
+  // Trade handlers for multiplayer
+  const handleCreateTrade = useCallback(
+    async (trade: PendingTrade) => {
+      setPendingTrades((prev) => [...prev, trade]);
+
+      if (currentRoom) {
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            currentIndexRef.current,
+            "tradeOffer",
+            { trade }
+          );
+          log("📤", "Broadcast trade offer", { to: trade.toPlayerName });
+        } catch (error) {
+          log("❌", "Failed to broadcast trade offer", error);
+        }
+      }
+    },
+    [currentRoom, currentUserId, log]
+  );
+
+  const handleAcceptTradeOffer = useCallback(
+    async (tradeId: string) => {
+      setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+
+      if (currentRoom) {
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            currentIndexRef.current,
+            "acceptTradeOffer",
+            { tradeId }
+          );
+          log("✅", "Broadcast trade acceptance", { tradeId });
+        } catch (error) {
+          log("❌", "Failed to broadcast trade acceptance", error);
+        }
+      }
+    },
+    [currentRoom, currentUserId, log]
+  );
+
+  const handleRejectTradeOffer = useCallback(
+    async (tradeId: string) => {
+      setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+
+      if (currentRoom) {
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            currentIndexRef.current,
+            "rejectTradeOffer",
+            { tradeId }
+          );
+          log("❌", "Broadcast trade rejection", { tradeId });
+        } catch (error) {
+          log("❌", "Failed to broadcast trade rejection", error);
+        }
+      }
+    },
+    [currentRoom, currentUserId, log]
+  );
+
+  const handleCancelTradeOffer = useCallback(
+    async (tradeId: string) => {
+      setPendingTrades((prev) => prev.filter((t) => t.id !== tradeId));
+
+      if (currentRoom) {
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            currentIndexRef.current,
+            "cancelTradeOffer",
+            { tradeId }
+          );
+          log("🚫", "Broadcast trade cancellation", { tradeId });
+        } catch (error) {
+          log("❌", "Failed to broadcast trade cancellation", error);
+        }
+      }
+    },
+    [currentRoom, currentUserId, log]
+  );
+
   const handlePlayLocal = useCallback(() => {
     log("🎮", "SWITCHING TO LOCAL MODE");
     setShowLocalGame(true);
-    setGameMode("playing"); // Or create a new 'local' mode
+    setGameMode("playing");
   }, [log]);
-  // 🔥 INITIALIZE GAME
+
   const waitingRoomSubsRef = useRef<any>(null);
   const [isMoving, setIsMoving] = useState(false);
   const [hasPair, setHasPair] = useState(false);
@@ -179,6 +403,14 @@ function App() {
     topRight: { x: 10, y: -195 },
   };
 
+  // 🔥 HELPER: Check if position is a joker
+  const isJokerPosition = useCallback(
+    (position: number) => {
+      return jokerPositions.includes(position);
+    },
+    [jokerPositions]
+  );
+
   // 🔥 SAFE INDEX WITH LOGGING
   const getSafePlayerIndex = useCallback(
     (index: number, source: string = "unknown") => {
@@ -189,6 +421,41 @@ function App() {
         `getSafePlayerIndex [${source}]: ${index} → ${safeIndex} (players: ${len})`
       );
       return safeIndex;
+    },
+    [log]
+  );
+
+  // 🔥 RELEASE PLAYER CARDS
+  const releasePlayerCards = useCallback(
+    (playerIndex: number) => {
+      log("🔓", "Releasing cards for bankrupt player", { playerIndex });
+
+      setPlayers((prev) => {
+        const newPlayers = [...prev];
+        const player = newPlayers[playerIndex];
+
+        if (!player) return prev;
+
+        player.collectedCards = [];
+        player.boughtCards = [];
+
+        playersRef.current = newPlayers;
+        return newPlayers;
+      });
+
+      setCardOwners((prev) => {
+        const newOwners = { ...prev };
+
+        Object.keys(newOwners).forEach((positionStr) => {
+          const position = parseInt(positionStr);
+          if (newOwners[position] === playerIndex) {
+            delete newOwners[position];
+            log("🔓", "Released card at position", { position });
+          }
+        });
+
+        return newOwners;
+      });
     },
     [log]
   );
@@ -210,7 +477,6 @@ function App() {
       setWinner(winnerPlayer);
       setGameOver(true);
 
-      // Award winner the pool of chips
       const totalPlayers = playersRef.current.length;
       const poolAmount = 15000 * totalPlayers;
 
@@ -219,7 +485,6 @@ function App() {
         poolAmount,
       });
 
-      // Find winner's user_id from roomPlayers
       const winnerIndex = playersRef.current.findIndex(
         (p) => p.name === winnerPlayer.name
       );
@@ -249,8 +514,29 @@ function App() {
               `Awarded ${poolAmount} chips to ${winnerPlayer.name}. New balance: ${newBalance}`
             );
           }
+
+          // Sync game end stats for current user if they are in this game
+          if (currentUserId === winnerRoomPlayer.user_id) {
+            // Winner gets all chips (their final chips after winning)
+            await syncGameEndStats(winnerPlayer.chips, 15000);
+          }
         } catch (err) {
           console.error("Error awarding winner:", err);
+        }
+      }
+
+      // Sync stats for all other players (they lost)
+      for (let i = 0; i < playersRef.current.length; i++) {
+        const player = playersRef.current[i];
+        const roomPlayer = roomPlayers[i];
+
+        if (
+          roomPlayer &&
+          roomPlayer.user_id !== winnerRoomPlayer?.user_id &&
+          roomPlayer.user_id === currentUserId
+        ) {
+          // This player lost - sync with their final chips (usually 0 or low)
+          await syncGameEndStats(player.chips, 15000);
         }
       }
 
@@ -308,15 +594,15 @@ function App() {
     }
   }, [gameStarted, isMusicPlaying, musicVolume]);
 
+  // 🔥 FIXED: Apply mystery card effects with proper chip tracking
   const applyMysteryCardEffects = useCallback(
     async (card: MysteryCard, playerIndex: number) => {
       const effects = card.effects;
-      let chipGain = 0; // Track net chip gain for wallet sync
+      let chipGain = 0;
 
       setPlayers((prev) => {
         const updated = [...prev];
 
-        // SAFETY CHECK - validate playerIndex
         if (playerIndex < 0 || playerIndex >= updated.length) {
           log(
             "❌",
@@ -331,13 +617,13 @@ function App() {
           return prev;
         }
 
+        const oldPlayerChips = player.chips; // ✅ FIX: Define before use
+
         // Apply chip changes
         if (effects.cb) {
-          const oldChips = player.chips;
           player.chips = Math.max(0, player.chips + effects.cb);
-          chipGain = player.chips - oldChips;
+          chipGain = player.chips - oldPlayerChips;
 
-          // ✅ CHECK FOR BANKRUPTCY
           if (player.chips <= 0) {
             player.chips = 0;
             player.isBankrupt = true;
@@ -345,13 +631,11 @@ function App() {
 
             log("💀", `Player ${playerIndex} went bankrupt from mystery card`);
 
-            // Release their cards
             setTimeout(() => {
               releasePlayerCards(playerIndex);
               checkGameOver();
             }, 100);
           }
-          chipGain += player.chips - oldPlayerChips;
 
           log("💰", `Mystery card chip change: ${chipGain}`);
         }
@@ -380,12 +664,11 @@ function App() {
         // Apply collect from each player
         if (effects.ce && effects.ce !== 0) {
           const amount = effects.ce;
-          const oldPlayerChips = player.chips;
+          const beforeCollectChips = player.chips;
 
           updated.forEach((p, idx) => {
             if (idx !== playerIndex && !p.isEliminated) {
               if (amount > 0) {
-                // Collect from other players
                 const collectAmount = Math.min(Math.abs(amount), p.chips);
                 p.chips = Math.max(0, p.chips - collectAmount);
                 player.chips += collectAmount;
@@ -401,7 +684,6 @@ function App() {
                   setTimeout(() => releasePlayerCards(idx), 100);
                 }
               } else {
-                // Pay to other players
                 const payAmount = Math.min(Math.abs(amount), player.chips);
                 player.chips = Math.max(0, player.chips - payAmount);
                 p.chips += payAmount;
@@ -409,12 +691,9 @@ function App() {
             }
           });
 
-          // Track net chip gain from collect/pay
-          chipGain += player.chips - oldPlayerChips;
-          log(
-            "💰",
-            `Collect/Pay chip change: ${player.chips - oldPlayerChips}`
-          );
+          const collectChipGain = player.chips - beforeCollectChips;
+          chipGain += collectChipGain;
+          log("💰", `Collect/Pay chip change: ${collectChipGain}`);
         }
 
         playersRef.current = updated;
@@ -451,7 +730,7 @@ function App() {
 
       setTimeout(() => checkGameOver(), 1000);
     },
-    [log, checkGameOver, roomPlayers]
+    [log, checkGameOver, roomPlayers, releasePlayerCards]
   );
 
   const checkWildExpiration = useCallback(
@@ -488,14 +767,13 @@ function App() {
       const card = index < jokerCount ? JOKER_CARD : getRandomMysteryCard();
       mysteryMap[pos] = card;
 
-      // Track joker positions
       if (card.deck === "Joker") {
         newJokerPositions.push(pos);
       }
     });
 
     setMysteryCardPositions(mysteryMap);
-    setJokerPositions(newJokerPositions); // Update joker positions state!
+    setJokerPositions(newJokerPositions);
 
     log(
       "🃏",
@@ -518,30 +796,82 @@ function App() {
         return;
       }
 
+      // Deduct 15000 entrance fee from all players
+      for (const player of freshPlayers) {
+        if (player.user_id && supabase) {
+          try {
+            const { data: wallet } = await supabase
+              .from("user_wallet")
+              .select("chips")
+              .eq("user_id", player.user_id)
+              .single();
+
+            if (wallet && wallet.chips >= 15000) {
+              await supabase
+                .from("user_wallet")
+                .update({
+                  chips: wallet.chips - 15000,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("user_id", player.user_id);
+
+              log(
+                "💰",
+                `Deducted 15000 entrance fee from ${player.player_name}`
+              );
+
+              // Update local wallet balance if it's current player
+              if (player.user_id === currentUserId) {
+                setWalletBalance(wallet.chips - 15000);
+              }
+            } else {
+              log(
+                "⚠️",
+                `${player.player_name} has insufficient funds (${wallet?.chips || 0})`
+              );
+            }
+          } catch (error) {
+            log(
+              "❌",
+              `Failed to deduct entrance fee for ${player.player_name}`,
+              error
+            );
+          }
+        }
+      }
+
       setDealtCards(room.game_state?.dealtCards || {});
       setJokerPositions(room.game_state?.jokerPositions || []);
       initializeMysteryCards();
 
-      const gamePlayers: Player[] = freshPlayers.map((rp, idx) => ({
-        id: rp.user_id || `player-${idx}`, // ADD THIS LINE
+      const gamePlayers: Player[] = freshPlayers.map((rp, idx) => {
+        log("👤", `Creating player ${idx}`, {
+          user_id: rp.user_id,
+          player_name: rp.player_name,
+          isCurrentUser: rp.user_id === currentUserId,
+        });
 
-        name: rp.player_name || "Unknown",
-        chips: 15000, // Everyone starts with 15,000 chips in game
-        color: ["#000000", "#DC143C", "#90EE90", "#ADD8E6"][idx] || "#CCCCCC",
-        position: (["bottom", "left", "top", "right"][idx] || "bottom") as any,
-        collectedCards: Array.isArray(rp.collected_cards)
-          ? rp.collected_cards
-          : [],
-        boughtCards: Array.isArray(rp.bought_cards) ? rp.bought_cards : [],
-        boardPosition: [0, 16, 32, 48][idx] || 0,
-        suit: rp.player_suit || "♠",
-        isEliminated: rp.eliminated || false,
-        wilds: 0,
-        wildCollectedAt: [],
-        lastBoardPosition: [0, 16, 32, 48][idx] || 0,
-        lapsCompleted: 0,
-        jokers: [],
-      }));
+        return {
+          id: rp.user_id || `player-${idx}`,
+          name: rp.player_name || "Unknown",
+          chips: 15000,
+          color: ["#000000", "#DC143C", "#90EE90", "#ADD8E6"][idx] || "#CCCCCC",
+          position: (["bottom", "left", "top", "right"][idx] ||
+            "bottom") as any,
+          collectedCards: Array.isArray(rp.collected_cards)
+            ? rp.collected_cards
+            : [],
+          boughtCards: Array.isArray(rp.bought_cards) ? rp.bought_cards : [],
+          boardPosition: [0, 16, 32, 48][idx] || 0,
+          suit: rp.player_suit || "♠",
+          isEliminated: rp.eliminated || false,
+          wilds: 0,
+          wildCollectedAt: [],
+          lastBoardPosition: [0, 16, 32, 48][idx] || 0,
+          lapsCompleted: 0,
+          jokers: [],
+        };
+      });
 
       playersRef.current = gamePlayers;
       currentIndexRef.current = 0;
@@ -580,6 +910,7 @@ function App() {
       toCards: TradeCard[],
       toMoney: number
     ) => {
+      // SINGLE STATE UPDATE - Both arrays updated atomically
       setPlayers((prevPlayers) => {
         const newPlayers = [...prevPlayers];
         const fromPlayerIndex = newPlayers.findIndex(
@@ -589,7 +920,7 @@ function App() {
 
         if (fromPlayerIndex === -1 || toPlayerIndex === -1) return prevPlayers;
 
-        // Update fromPlayer
+        // Update FROM player
         newPlayers[fromPlayerIndex] = {
           ...newPlayers[fromPlayerIndex],
           chips: newPlayers[fromPlayerIndex].chips + toMoney - fromMoney,
@@ -606,9 +937,19 @@ function App() {
               position: c.position || 0,
             })),
           ],
+          collectedCards: [
+            ...newPlayers[fromPlayerIndex].collectedCards.filter(
+              (c) =>
+                c &&
+                !fromCards.some(
+                  (fc) => fc.suit === c.suit && fc.value === c.value
+                )
+            ),
+            ...toCards.map((c) => ({ suit: c.suit, value: c.value })),
+          ],
         };
 
-        // Update toPlayer
+        // Update TO player
         newPlayers[toPlayerIndex] = {
           ...newPlayers[toPlayerIndex],
           chips: newPlayers[toPlayerIndex].chips + fromMoney - toMoney,
@@ -625,50 +966,42 @@ function App() {
               position: c.position || 0,
             })),
           ],
+          collectedCards: [
+            ...newPlayers[toPlayerIndex].collectedCards.filter(
+              (c) =>
+                c &&
+                !toCards.some(
+                  (tc) => tc.suit === c.suit && tc.value === c.value
+                )
+            ),
+            ...fromCards.map((c) => ({ suit: c.suit, value: c.value })),
+          ],
         };
 
-        // Update refs
         playersRef.current = newPlayers;
         return newPlayers;
       });
 
-      // Update collectedCards for both players
-      setPlayers((prev) => {
-        const updated = [...prev];
-        const fromIdx = updated.findIndex((p) => p.id === fromPlayerId);
-        const toIdx = updated.findIndex((p) => p.id === toPlayerId);
-
-        if (fromIdx !== -1) {
-          updated[fromIdx].collectedCards = updated[fromIdx].boughtCards.map(
-            (c) => ({ suit: c.suit, value: c.value })
-          );
-        }
-        if (toIdx !== -1) {
-          updated[toIdx].collectedCards = updated[toIdx].boughtCards.map(
-            (c) => ({ suit: c.suit, value: c.value })
-          );
-        }
-
-        playersRef.current = updated;
-        return updated;
-      });
-
-      // Broadcast trade to other players
+      // Broadcast AFTER state completes
       if (currentRoom) {
-        await RoomService.broadcastAction(
-          currentRoom.id,
-          currentUserId,
-          currentIndexRef.current,
-          "trade",
-          {
-            fromPlayerId,
-            toPlayerId,
-            fromCards,
-            fromMoney,
-            toCards,
-            toMoney,
-          }
-        );
+        try {
+          await RoomService.broadcastAction(
+            currentRoom.id,
+            currentUserId,
+            currentIndexRef.current,
+            "trade",
+            {
+              fromPlayerId,
+              toPlayerId,
+              fromCards,
+              fromMoney,
+              toCards,
+              toMoney,
+            }
+          );
+        } catch (error) {
+          console.error("Failed to broadcast trade:", error);
+        }
       }
     },
     [currentRoom, currentUserId]
@@ -679,7 +1012,6 @@ function App() {
 
     for (const rp of roomPlayers) {
       try {
-        // Deduct from user_wallet
         if (supabase) {
           const { data: wallet } = await supabase
             .from("user_wallet")
@@ -710,41 +1042,6 @@ function App() {
     }
   };
 
-  const releasePlayerCards = useCallback(
-    (playerIndex: number) => {
-      log("🔓", "Releasing cards for bankrupt player", { playerIndex });
-
-      setPlayers((prev) => {
-        const newPlayers = [...prev];
-        const player = newPlayers[playerIndex];
-
-        if (!player) return prev;
-
-        // Clear the player's cards
-        player.collectedCards = [];
-        player.boughtCards = [];
-
-        playersRef.current = newPlayers;
-        return newPlayers;
-      });
-
-      // Remove ownership from all cards owned by this player
-      setCardOwners((prev) => {
-        const newOwners = { ...prev };
-
-        Object.keys(newOwners).forEach((positionStr) => {
-          const position = parseInt(positionStr);
-          if (newOwners[position] === playerIndex) {
-            delete newOwners[position];
-            log("🔓", "Released card at position", { position });
-          }
-        });
-
-        return newOwners;
-      });
-    },
-    [log]
-  );
   const hasDeductedChips = useRef(false);
 
   useEffect(() => {
@@ -840,7 +1137,7 @@ function App() {
         return updated;
       });
     },
-    [getSafePlayerIndex, log, cardOwners]
+    [getSafePlayerIndex, log, cardOwners, releasePlayerCards, checkGameOver]
   );
 
   const applyPayPenalty = useCallback(
@@ -862,7 +1159,6 @@ function App() {
         updated[safePayer].chips = payerChips - actualPayment;
         updated[safeReceiver].chips += actualPayment;
 
-        // ✅ CHECK FOR BANKRUPTCY
         if (updated[safePayer].chips <= 0) {
           updated[safePayer].chips = 0;
           updated[safePayer].isBankrupt = true;
@@ -927,17 +1223,14 @@ function App() {
         safeIndex,
       });
 
-      // Apply effects
       await applyMysteryCardEffects(mysteryCard, safeIndex);
 
-      // Close modals
       setShowVideoModal(false);
       setShowMysteryCardModal(false);
       setLandedMysteryCard(null);
 
       log("✅", "Cleared modals");
 
-      // Handle turn continuation
       if (effects.rt === true) {
         log("🔄", "Repeat turn - keeping turn");
         setHasExtraTurn(true);
@@ -954,6 +1247,7 @@ function App() {
     },
     [hasPair, applyMysteryCardEffects, endTurn, log]
   );
+
   const handleMysteryCardEffect = useCallback(
     async (mysteryCard: MysteryCard, playerIndex?: number) => {
       const safeIndex =
@@ -963,7 +1257,6 @@ function App() {
         safeIndex,
       });
 
-      // Broadcast mystery card action to all players
       if (currentRoom) {
         try {
           await RoomService.broadcastAction(
@@ -981,9 +1274,8 @@ function App() {
         }
       }
 
-      // Show video if Bomb or Lightning card
       if (mysteryCard.deck === "Bomb") {
-        setLandedMysteryCard(mysteryCard); // Set BEFORE showing video
+        setLandedMysteryCard(mysteryCard);
         setVideoPath("/games/pokeropoly/video/bomb.mp4");
         setVideoCardType("bomb");
         setShowVideoModal(true);
@@ -1000,7 +1292,7 @@ function App() {
         }, 5000);
         return;
       } else if (mysteryCard.deck === "Mystery") {
-        setLandedMysteryCard(mysteryCard); // Set BEFORE showing video
+        setLandedMysteryCard(mysteryCard);
         setVideoPath("/games/pokeropoly/video/lightning.mp4");
         setVideoCardType("lightning");
         setShowVideoModal(true);
@@ -1020,7 +1312,6 @@ function App() {
         return;
       }
 
-      // For non-video mystery cards, show modal immediately
       setLandedMysteryCard(mysteryCard);
       setShowMysteryCardModal(true);
     },
@@ -1084,11 +1375,9 @@ function App() {
               boardPosition: newPos,
             };
 
-            // Check for lap completion (matching LocalGame logic)
             if (oldPos === 63 && newPos === 0) {
               log("🏁", "Player completed a lap");
 
-              // Expire wilds collected at positions passed on this lap
               const wildPositions = updated[safeIndex].wildCollectedAt || [];
               let wildsExpired = 0;
               const keptWilds = wildPositions.filter(
@@ -1131,7 +1420,6 @@ function App() {
               const playerWilds = updated[safeIndex].wilds || 0;
               const collectedAt = updated[safeIndex].wildCollectedAt || [];
 
-              // Prevent duplicate collection
               if (!collectedAt.includes(finalPosition)) {
                 updated[safeIndex] = {
                   ...updated[safeIndex],
@@ -1153,24 +1441,21 @@ function App() {
               return updated;
             });
 
-            // Show modal briefly, then auto-continue (no effects to process)
             setLandedMysteryCard(JOKER_CARD);
             setShowMysteryCardModal(true);
 
-            // Auto-close and advance turn after 2s
             setTimeout(() => {
               log("🃏", "Wild card auto-processed - continuing turn");
               setShowMysteryCardModal(false);
               setLandedMysteryCard(null);
 
-              // Handle extras first, then end turn
               if (hasExtraTurn) {
                 setHasExtraTurn(false);
                 setHasPair(false);
               } else {
                 endTurn();
               }
-            }, 2000); // Matches LocalGame 2s delay
+            }, 2000);
 
             return;
           }
@@ -1187,11 +1472,9 @@ function App() {
                 finalPosition
               );
 
-              // Only increment wilds if this is actually a Joker card
               if (mysteryCard.deck === "Joker") {
                 const collectedAt = updated[safeIndex].wildCollectedAt || [];
 
-                // Prevent duplicate collection
                 if (!collectedAt.includes(finalPosition)) {
                   updated[safeIndex] = {
                     ...updated[safeIndex],
@@ -1216,7 +1499,6 @@ function App() {
                 (c): c is any => c !== null
               );
 
-              // Include wilds in penalty calculation (matching LocalGame)
               const { penalty, hand } = calculatePenalty(
                 card,
                 ownerPlayer.collectedCards,
@@ -1249,7 +1531,6 @@ function App() {
               setLandedCard(null);
               setPenaltyInfo(null);
 
-              // Auto-end turn after landing on empty space
               setTimeout(() => {
                 if (!hasPair && !hasExtraTurn) {
                   endTurn();
@@ -1272,6 +1553,7 @@ function App() {
       hasPair,
       hasExtraTurn,
       endTurn,
+      isJokerPosition,
     ]
   );
 
@@ -1283,11 +1565,9 @@ function App() {
       let index = startIndex % totalPlayers;
       let attempts = 0;
 
-      // Keep searching for an active player
       while (attempts < totalPlayers) {
         const player = playersRef.current[index];
 
-        // Check if player exists and is not eliminated
         if (player && !player.isEliminated && player.chips > 0) {
           log("✅", `Found active player at index ${index}: ${player.name}`);
           return index;
@@ -1314,7 +1594,6 @@ function App() {
       const safeIndex = getSafePlayerIndex(currentIndexRef.current, "rollDice");
       const currentPlayer = playersRef.current[safeIndex];
 
-      // CHECK: Is current player eliminated?
       if (currentPlayer?.isEliminated) {
         log(
           "⏭️",
@@ -1418,7 +1697,6 @@ function App() {
               toMoney,
             } = action.action_data;
 
-            // Apply trade without broadcasting (already received via broadcast)
             setPlayers((prevPlayers) => {
               const newPlayers = [...prevPlayers];
               const fromPlayerIndex = newPlayers.findIndex(
@@ -1431,7 +1709,6 @@ function App() {
               if (fromPlayerIndex === -1 || toPlayerIndex === -1)
                 return prevPlayers;
 
-              // Update fromPlayer
               newPlayers[fromPlayerIndex] = {
                 ...newPlayers[fromPlayerIndex],
                 chips: newPlayers[fromPlayerIndex].chips + toMoney - fromMoney,
@@ -1460,7 +1737,6 @@ function App() {
                 ],
               };
 
-              // Update toPlayer
               newPlayers[toPlayerIndex] = {
                 ...newPlayers[toPlayerIndex],
                 chips: newPlayers[toPlayerIndex].chips + fromMoney - toMoney,
@@ -1497,6 +1773,51 @@ function App() {
               fromPlayerId,
               toPlayerId,
             });
+            break;
+
+          case "mysteryCard":
+            const { mysteryCard, position } = action.action_data;
+            log("🎴", "Processing mystery card from broadcast", {
+              card: mysteryCard.title,
+              position,
+              playerIndex: safeIndex,
+            });
+
+            // Apply the mystery card effects for the player
+            await applyMysteryCardEffects(mysteryCard, safeIndex);
+            break;
+
+          case "tradeOffer":
+            const { trade } = action.action_data;
+            log("📥", "Received trade offer", {
+              from: trade.fromPlayerName,
+              to: trade.toPlayerName,
+            });
+            setPendingTrades((prev) => [...prev, trade]);
+            break;
+
+          case "acceptTradeOffer":
+            const acceptTradeId = action.action_data.tradeId;
+            log("✅", "Trade accepted", { tradeId: acceptTradeId });
+            setPendingTrades((prev) =>
+              prev.filter((t) => t.id !== acceptTradeId)
+            );
+            break;
+
+          case "rejectTradeOffer":
+            const rejectTradeId = action.action_data.tradeId;
+            log("❌", "Trade rejected", { tradeId: rejectTradeId });
+            setPendingTrades((prev) =>
+              prev.filter((t) => t.id !== rejectTradeId)
+            );
+            break;
+
+          case "cancelTradeOffer":
+            const cancelTradeId = action.action_data.tradeId;
+            log("🚫", "Trade cancelled", { tradeId: cancelTradeId });
+            setPendingTrades((prev) =>
+              prev.filter((t) => t.id !== cancelTradeId)
+            );
             break;
 
           case "endTurn":
@@ -1552,7 +1873,6 @@ function App() {
           case "playerLeft":
             log("👋", `Player ${action.action_data.playerName} left the game`);
 
-            // Mark player as eliminated
             setPlayers((prev) => {
               const updated = [...prev];
               if (updated[safeIndex]) {
@@ -1566,7 +1886,6 @@ function App() {
               return updated;
             });
 
-            // Return their cards to the board
             setCardOwners((prev) => {
               const updated = { ...prev };
               Object.entries(updated).forEach(([position, ownerIdx]) => {
@@ -1577,7 +1896,6 @@ function App() {
               return updated;
             });
 
-            // Update turn to next active player
             const nextPlayerIdx = action.action_data.nextPlayerIndex;
             if (nextPlayerIdx !== undefined && nextPlayerIdx !== -1) {
               log("🔄", `Advancing turn to player ${nextPlayerIdx}`);
@@ -1589,7 +1907,6 @@ function App() {
               setAuctionInfo(null);
             }
 
-            // Check game over
             setTimeout(() => checkGameOver(), 1000);
             break;
         }
@@ -1612,6 +1929,7 @@ function App() {
     log,
     roomPlayers,
     currentUserId,
+    checkGameOver,
   ]);
 
   useEffect(() => {
@@ -1701,7 +2019,6 @@ function App() {
     setLandedCard(null);
     setPenaltyInfo(null);
 
-    // Check for doubles before ending turn
     setTimeout(() => {
       if (!hasPair && !hasExtraTurn) {
         endTurn();
@@ -1743,7 +2060,6 @@ function App() {
 
     setPenaltyInfo(null);
 
-    // Check for doubles before ending turn
     setTimeout(() => {
       if (!hasPair && !hasExtraTurn) {
         endTurn();
@@ -1840,7 +2156,6 @@ function App() {
     setAuctionBids({});
     setAuctionInitiatorIndex(null);
 
-    // Check for doubles before ending turn
     setTimeout(() => {
       if (!hasPair && !hasExtraTurn) {
         endTurn();
@@ -1977,14 +2292,12 @@ function App() {
 
       log("👋", `PLAYER LEAVING: ${playerToRemove.name} at index ${safeIndex}`);
 
-      // Calculate next active player
       const nextPlayerIndex = getNextActivePlayer(
         currentIndexRef.current === safeIndex
           ? safeIndex + 1
           : currentIndexRef.current
       );
 
-      // Mark as eliminated in database
       const { error: updateError } = await supabase
         .from("poker_opoly_players")
         .update({
@@ -2000,19 +2313,17 @@ function App() {
         return;
       }
 
-      // Update local state - THIS TRIGGERS THE UI TO HIDE THE PROFILE
       setPlayers((prev) => {
         const updated = [...prev];
         updated[safeIndex] = {
           ...updated[safeIndex],
-          isEliminated: true, // <-- This flag hides the profile
+          isEliminated: true,
           chips: 0,
         };
         playersRef.current = updated;
         return updated;
       });
 
-      // Reset card ownership
       setCardOwners((prev) => {
         const updated = { ...prev };
         Object.entries(updated).forEach(([position, ownerIdx]) => {
@@ -2023,7 +2334,6 @@ function App() {
         return updated;
       });
 
-      // Broadcast leave action
       await RoomService.broadcastAction(
         currentRoom.id,
         currentUserId,
@@ -2036,7 +2346,6 @@ function App() {
         }
       );
 
-      // Update turn in database
       if (nextPlayerIndex !== -1) {
         await supabase
           .from("game_rooms")
@@ -2052,7 +2361,6 @@ function App() {
         setPenaltyInfo(null);
       }
 
-      // Check if game should end
       const activePlayers = playersRef.current.filter(
         (p) => !p.isEliminated && p.chips > 0
       );
@@ -2087,7 +2395,6 @@ function App() {
 
     const currentPlayer = playersRef.current[currentIndexRef.current];
 
-    // If current player is eliminated, automatically advance to next active player
     if (currentPlayer && currentPlayer.isEliminated) {
       log(
         "⏭️",
@@ -2099,14 +2406,12 @@ function App() {
       if (nextIndex !== -1 && nextIndex !== currentIndexRef.current) {
         log("🔄", `Auto-advancing to player ${nextIndex}`);
 
-        // Update turn
         currentIndexRef.current = nextIndex;
         setCurrentPlayerIndex(nextIndex);
         setHasRolledThisTurn(false);
         setLandedCard(null);
         setPenaltyInfo(null);
 
-        // Update database
         if (currentRoom) {
           supabase
             .from("game_rooms")
@@ -2172,7 +2477,7 @@ function App() {
   const onRollComplete = useCallback(
     (dice1: number, dice2: number) => {
       const total = dice1 + dice2;
-      const hasPair = dice1 === dice2; // Correct: 1=1, 2=2, 3=3, etc
+      const hasPair = dice1 === dice2;
 
       console.log(
         `🎲 Rolled: ${dice1} + ${dice2} = ${total} | Doubles: ${hasPair}`
@@ -2180,7 +2485,7 @@ function App() {
 
       handleDrawFromShoe(total, hasPair);
     },
-    [handleDrawFromShoe, log]
+    [handleDrawFromShoe]
   );
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -2309,7 +2614,7 @@ function App() {
 
   const handleDeal = () => {
     const dealSound = new Audio("games/pokeropoly/sound/deal-cards.mp3");
-    dealSound.volume = 0.7; // Adjust volume as needed (0.5-0.9 range works well with other sounds)
+    dealSound.volume = 0.7;
     dealSound.play().catch((e) => console.log("Deal sound failed", e));
     const suits = ["♠", "♥", "♦", "♣"];
     const values = [
@@ -2432,6 +2737,19 @@ function App() {
           .eq("id", user.id)
           .single();
         setCurrentUsername(profile?.username || "Player");
+
+        // Load wallet balance and XP
+        const { data: wallet } = await supabase
+          .from("user_wallet")
+          .select("chips, level, experience")
+          .eq("user_id", user.id)
+          .single();
+
+        if (wallet) {
+          setWalletBalance(wallet.chips);
+          setPlayerLevel(wallet.level || 1);
+          setPlayerExperience(wallet.experience || 0);
+        }
       }
     };
     getCurrentUser();
@@ -2500,15 +2818,16 @@ function App() {
       <MultiplayerLobby
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
-        onPlayLocal={handlePlayLocal} // ADD THIS LINE
-        onBack={() => navigate("/home")} // <-- This goes HERE, not in MultiplayerLobby.tsx
+        onPlayLocal={handlePlayLocal}
+        onBack={() => navigate("/home")}
       />
     );
   }
+
   if (showLocalGame) {
-    // Import your LocalGame component at the top
     return <LocalGame />;
   }
+
   if (gameMode === "waiting") {
     if (!currentRoom) return null;
     return (
@@ -2524,20 +2843,17 @@ function App() {
     );
   }
 
-  // 🏆 WINNER SCREEN
+  // Winner & Game Over screens remain the same
   if (gameOver && winner) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 relative overflow-hidden p-4">
-        {/* Animated background effects */}
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-20 left-20 w-72 h-72 bg-yellow-400 rounded-full blur-3xl animate-pulse"></div>
           <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500 rounded-full blur-3xl animate-pulse delay-1000"></div>
         </div>
 
         <div className="relative z-10 max-w-3xl w-full max-h-[95vh] overflow-y-auto">
-          {/* Main Winner Card */}
           <div className="bg-gradient-to-br from-black/80 to-black/60 backdrop-blur-2xl rounded-2xl border-4 border-yellow-400 shadow-2xl overflow-hidden">
-            {/* Trophy Header */}
             <div className="bg-gradient-to-r from-yellow-500/20 via-yellow-400/20 to-yellow-500/20 border-b-2 border-yellow-400/50 py-4">
               <div className="text-center">
                 <div className="text-6xl mb-2 animate-bounce inline-block">
@@ -2563,10 +2879,8 @@ function App() {
               </div>
             </div>
 
-            {/* Prize Section */}
             <div className="p-4">
               <div className="grid grid-cols-2 gap-3 mb-4">
-                {/* Total Pool */}
                 <div className="bg-gradient-to-br from-yellow-500/30 to-orange-500/30 rounded-xl p-3 border-2 border-yellow-400/60 shadow-xl">
                   <div className="text-yellow-300 text-xs font-bold mb-1 uppercase tracking-wider">
                     💰 Prize Pool
@@ -2579,7 +2893,6 @@ function App() {
                   </div>
                 </div>
 
-                {/* Final Score */}
                 <div className="bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-xl p-3 border-2 border-green-400/60 shadow-xl">
                   <div className="text-green-300 text-xs font-bold mb-1 uppercase tracking-wider">
                     🎯 Final Score
@@ -2593,7 +2906,6 @@ function App() {
                 </div>
               </div>
 
-              {/* Final Standings */}
               <div className="mb-4">
                 <h3 className="text-xl font-black text-white mb-2 flex items-center gap-2">
                   <span>📊</span> Final Standings
@@ -2663,7 +2975,6 @@ function App() {
                 </div>
               </div>
 
-              {/* Action Button */}
               <button
                 onClick={handleLeaveRoom}
                 className="w-full bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:from-blue-600 hover:via-blue-700 hover:to-blue-800 text-white font-black py-3 px-6 rounded-lg shadow-2xl transform hover:scale-105 active:scale-95 transition-all text-base border-2 border-blue-400/50"
@@ -2677,7 +2988,6 @@ function App() {
     );
   }
 
-  // 🏆 GAME OVER (NO WINNER)
   if (gameOver && !winner) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black">
@@ -2731,6 +3041,76 @@ function App() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* PLAYER WALLET HEADER */}
+      {gameStarted && (
+        <div className="fixed top-4 left-4 right-4 z-50 flex justify-between items-center px-4">
+          <div className="flex items-center gap-3">
+            {/* Player Avatar with Level Ring */}
+            <div className="relative">
+              <svg className="w-16 h-16 transform -rotate-90">
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.1)"
+                  strokeWidth="3"
+                />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  fill="none"
+                  stroke="#f97316"
+                  strokeWidth="3"
+                  strokeDasharray={`${2 * Math.PI * 28}`}
+                  strokeDashoffset={`${
+                    2 *
+                    Math.PI *
+                    28 *
+                    (1 - playerExperience / (playerLevel * 1000))
+                  }`}
+                  strokeLinecap="round"
+                  className="transition-all duration-500"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-11 h-11 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">
+                    {currentUsername.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Player Name & Level */}
+            <div>
+              <h2 className="text-white font-bold text-base leading-tight drop-shadow-lg">
+                {currentUsername}
+              </h2>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-orange-400 font-semibold text-xs drop-shadow">
+                  Lv {playerLevel}
+                </span>
+                <span className="text-white/50 text-xs">•</span>
+                <span className="text-white/70 text-xs whitespace-nowrap drop-shadow">
+                  {playerExperience.toLocaleString()}/
+                  {(playerLevel * 1000).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Wallet Balance */}
+          {/* <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full border-2 border-orange-500/50">
+            <span className="text-2xl">💰</span>
+            <span className="text-white font-bold text-base drop-shadow-lg">
+              ${walletBalance.toLocaleString()}
+            </span>
+          </div> */}
+        </div>
+      )}
+
       {/* CONTROLS */}
       <div className="fixed top-4 right-4 z-10 flex flex-col gap-2">
         <button
@@ -3601,21 +3981,39 @@ function App() {
         </div>
       )}
 
-      {gameStarted && currentPlayerIndex >= 0 && gameMode === "playing" && (
-        <>
-          {console.log("🔍 TradeManager should render", {
+      {gameStarted &&
+        currentPlayerIndex >= 0 &&
+        gameMode === "playing" &&
+        (() => {
+          // Find THIS user's player by matching user_id (not by index!)
+          const myPlayer = players.find((p) => p.id === currentUserId);
+          const playerToUse = myPlayer || players[currentPlayerIndex];
+
+          console.log("🔍 TradeManagerLocal render", {
             gameStarted,
             currentPlayerIndex,
+            currentUserId,
+            myPlayerId: myPlayer?.id,
+            myPlayerName: myPlayer?.name,
+            usingPlayer: playerToUse?.name,
             gameMode,
             playersCount: players.length,
-          })}
-          <TradeManager
-            currentPlayer={convertPlayerForTrade(players[currentPlayerIndex])}
-            allPlayers={players.map(convertPlayerForTrade)}
-            onTradeComplete={handleTradeComplete}
-          />
-        </>
-      )}
+            allPlayerIds: players.map((p) => ({ id: p.id, name: p.name })),
+          });
+
+          return (
+            <TradeManagerLocal
+              currentPlayer={convertPlayerForTrade(playerToUse)}
+              allPlayers={players.map(convertPlayerForTrade)}
+              onTradeComplete={handleTradeComplete}
+              pendingTrades={pendingTrades}
+              onCreateTrade={handleCreateTrade}
+              onAcceptTrade={handleAcceptTradeOffer}
+              onRejectTrade={handleRejectTradeOffer}
+              onCancelTrade={handleCancelTradeOffer}
+            />
+          );
+        })()}
 
       {/* VIDEO MODAL */}
       {showVideoModal && (
